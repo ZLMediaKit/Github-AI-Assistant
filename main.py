@@ -220,7 +220,7 @@ def install_startup():
         console.print("Install startup success", style="bold green")
 
 
-@app.command("trans_issues", help="Translate issues into english")
+@app.command("trans_issues", help="Translate a specific issue into english")
 def trans_issues(input_url: Annotated[str, typer.Option(help="GitHub issue URL, for example, "
                                                              "https://github.com/your-org/your-repository/issues/1")],
                  github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
@@ -239,7 +239,7 @@ def trans_issues(input_url: Annotated[str, typer.Option(help="GitHub issue URL, 
     trans.trans_issues(input_url)
 
 
-@app.command("trans_discussions", help="Translate discussion into english")
+@app.command("trans_discussions", help="Translate a specific discussion into english")
 def trans_discussion(input_url: Annotated[str, typer.Option(help="GitHub discussion URL, for example, "
                                                                  "https://github.com/your-org/your-repository/discussions/1")],
                      github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
@@ -258,7 +258,7 @@ def trans_discussion(input_url: Annotated[str, typer.Option(help="GitHub discuss
     trans.trans_discussion(input_url)
 
 
-@app.command("trans_pr", help="Translate pull request into english")
+@app.command("trans_pr", help="Translate a specific PR into english")
 def trans_pr(input_url: Annotated[str, typer.Option(help="GitHub PR URL, for example, "
                                                          "https://github.com/your-org/your-repository/pull/1")],
              github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
@@ -300,7 +300,7 @@ def batch_trans(input_url: Annotated[
     trans.batch_trans(input_url, query_filter, query_limit)
 
 
-@app.command("start_server", help="Translate server")
+@app.command("start_server", help="Start the GitHub webhook server")
 def start_server(listen_port: Annotated[int, typer.Option(help="Listen port, for example, 15372",
                                                           min=1, max=65535, clamp=True,
                                                           envvar=[constants.ENV_SERVER_PORT])],
@@ -321,7 +321,10 @@ def start_server(listen_port: Annotated[int, typer.Option(help="Listen port, for
     atexit.register(system.delete_pid_file)
     if not system.check_pid_status():
         return
-    server.app.run(host="127.0.0.1", port=listen_port,
+    console.print("Starting server", style="bold green")
+    console.print(f"Your webhook is running at http://0.0.0.0:{listen_port}/api/v1/hooks", style="bold green")
+    console.print(f"Your webhook secret key is {settings.get_secret_key()}", style="bold green")
+    server.app.run(host="0.0.0.0", port=listen_port,
                    debug=settings.DEBUG,
                    auto_reload=settings.DEBUG,
                    workers=1,
