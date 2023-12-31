@@ -24,7 +24,7 @@ from core.console import console
 from core.utils import system, env
 
 app = typer.Typer(no_args_is_help=True,
-                  help="Auto trans issues/pr/discussion to english")
+                  help="Auto trans issues/pull requests/discussions to english")
 
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 
