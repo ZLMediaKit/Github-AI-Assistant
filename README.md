@@ -40,12 +40,14 @@ View help:
 ```bash
 ./run.sh --help
 ```
+![2023-12-30](https://github.com/ZLMediaKit/translation_issues/assets/24582085/282c5183-acb6-4173-881e-1e088b53996c)
 
 View help for a specific command:
 
 ```bash
 ./run.sh trans_issues --help
 ```
+![2023-12-30](https://github.com/ZLMediaKit/translation_issues/assets/24582085/839afbc1-fac5-491c-804a-1b5aaf289fcd)
 
 Set environment variables:
 
