@@ -49,6 +49,7 @@ async def github_hook(request):
     request_event = request.headers.get("X-GitHub-Event")
     request_delivery = request.headers.get("X-GitHub-Delivery")
     if not request_event or not request_delivery:
+        logger.error(f"invalid request: {request.headers}")
         return response.json({"message": "invalid request"}, status=400)
     data = request.json
     logger.info(f"Received event: {request_event}, delivery: {request_delivery}")
