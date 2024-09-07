@@ -43,7 +43,7 @@ def run_cmd(cmd, assert_success=False, capture_output=False, env=None):
         sys.stdout.flush()
         sys.stderr.flush()
         sys.exit(1)
-    return True
+    return result
 
 
 def check_env():
