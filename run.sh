@@ -29,7 +29,7 @@ if [ ! -d "venv" ] || ! python3.11 -c "import sys; print(sys.version)" | grep -q
     echo "Creating Python 3.11 virtual environment..."
     sudo -v
     sudo apt update
-    sudo apt install build-essential swig libpcre3-dev libpcre3 -y
+    sudo apt install build-essential swig libpcre3-dev libpcre3 git -y
     python3.11 -m venv venv
 fi
 

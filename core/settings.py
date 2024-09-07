@@ -54,6 +54,10 @@ def get_secret_key():
     return env.get_env(constants.ENV_SECRET_KEY)
 
 
+def get_proxy_url():
+    return env.get_env(constants.ENV_PROXY_URL)
+
+
 def setup_env(github_token, openai_key, openai_proxy, gemini_key, secret_key=None):
     setup_github_token(github_token)
     if openai_key:

@@ -174,7 +174,7 @@ def do_gemini_translate(plaintext, system, messages):
     headers = {
         "Content-Type": "application/json",
     }
-    response = httpx.post(url, headers=headers, json=data, proxy="http://127.0.0.1:8118", timeout=30)
+    response = httpx.post(url, headers=headers, json=data, proxy=settings.get_proxy_url(), timeout=30)
     if response.status_code != 200:
         raise Exception(f"gemini request failed, code={response.status_code}")
     result_json = response.json()

@@ -10,6 +10,7 @@ import httpx
 
 from core.exception import GithubGraphQLException
 from core.utils import env
+
 ALLOWED_EVENTS = ['pull_request', 'pull_request_review', 'pull_request_review_comment', 'issues', 'issue_comment',
                   'discussion', 'discussion_comment']
 LABEL_TRANS_NAME = "TransByAI"
@@ -330,9 +331,7 @@ def query_label_id(owner, name, label):
         }
     '''
 
-    result = do_post_requests({"query": query, "variables": {
-        "name": name, "owner": owner, "label": label
-    }})
+    result = do_post_requests({"query": query, "variables": {"name": name, "owner": owner, "label": label}})
     label_id = result['data']['repository']['label']['id']
     return label_id
 
