@@ -80,12 +80,12 @@ def trans_detail(labels, detail_type, detail_id, detail_url, title, body, commen
             if real_translated:
                 issue_changed = True
                 logger.info(f"New Title is: {title_trans}")
-            body_trans, has_translated_by_gpt, real_translated = trans_helper.gpt_translate(body)
-            if has_translated_by_gpt:
-                issue_has_translated_by_gpt = True
-            if real_translated:
-                issue_changed = True
-                logger.info(f"New Body:\n{body_trans}\n")
+        body_trans, has_translated_by_gpt, real_translated = trans_helper.gpt_translate(body)
+        if has_translated_by_gpt:
+            issue_has_translated_by_gpt = True
+        if real_translated:
+            issue_changed = True
+            logger.info(f"New Body:\n{body_trans}\n")
     if not issue_changed:
         logger.info(f"Nothing changed, skip")
     else:
