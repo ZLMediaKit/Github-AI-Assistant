@@ -6,7 +6,7 @@ import hashlib
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-from sanic import Sanic, response, text
+from sanic import Sanic, response, text, Request
 from sanic.log import logger as sanic_logger
 from sanic.response import empty
 
@@ -34,11 +34,8 @@ async def before_stop(app_instance: Sanic, loop):
     pass
 
 
-
-
-
 @app.post("/api/v1/hooks")
-async def github_hook(request):
+async def github_hook(request: Request):
     secret_key = settings.get_secret_key()
     if secret_key:
         try:
@@ -46,13 +43,13 @@ async def github_hook(request):
         except Exception as e:
             logger.error(f"verify_signature failed: {e}")
             return response.json({"message": "invalid secret_key"}, status=403)
-    request_event = request.headers.get("X-GitHub-Event")
-    request_delivery = request.headers.get("X-GitHub-Delivery")
+    request_event = request.headers.get("x-github-event")
+    request_delivery = request.headers.get("x-github-delivery")
+    logger.info(f"Received event: {request_event}, delivery: {request_delivery}")
     if not request_event or not request_delivery:
         logger.error(f"invalid request: {request.headers}")
         return response.json({"message": "invalid request"}, status=400)
     data = request.json
-    logger.info(f"Received event: {request_event}, delivery: {request_delivery}")
     hook = None
     if 'hook' in data and 'config' in data['hook'] and 'url' in data['hook']['config']:
         hook = data['hook']['config']['url']

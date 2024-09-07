@@ -12,7 +12,7 @@ from core.exception import GithubGraphQLException
 from core.utils import env
 
 ALLOWED_EVENTS = ['pull_request', 'pull_request_review', 'pull_request_review_comment', 'issues', 'issue_comment',
-                  'discussion', 'discussion_comment']
+                  'discussion', 'discussion_comment', 'commit_comment']
 LABEL_TRANS_NAME = "TransByAI"
 LABEL_REFINED_NAME = "RefinedByAI"
 LABEL_ENGLISH_NATIVE = "EnglishNative"
@@ -453,6 +453,27 @@ def update_pullrequest_review_comment(pr_id, body):
         "query": query, "variables": variables
     })
     return result['data']['updatePullRequestReviewComment']['pullRequestReviewComment']['id']
+
+def update_commit_comment(node_id, body):
+    query = '''
+        mutation ($id: ID!, $body: String!) {
+          updateCommitComment(
+            input: {commitCommentId: $id, body: $body}
+          ) {
+            commitComment {
+              id
+            }
+          }
+        }
+    '''
+    variables = {
+        "id": node_id,
+        'body': body,
+    }
+    result = do_post_requests({
+        "query": query, "variables": variables
+    })
+    return result['data']['updateCommitComment']['commitComment']['id']
 
 
 def update_pullrequest(pr_id, title, body, original_title=None):

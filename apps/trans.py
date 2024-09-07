@@ -1,11 +1,10 @@
 # -*- coding:utf-8 -*-
 __author__ = 'alex'
 
+from core import github_helper
+from core import trans_helper
 from core.exception import GithubGraphQLException
 from core.log import logger
-from core import settings
-from core import trans_helper
-from core import github_helper
 
 
 def trans_comments(comments):
@@ -523,6 +522,28 @@ def handle_github_request(data, event, delivery, headers):
                             f"Thread: {delivery}: Warning!!! Ignore update PR Review comment {node_id} failed, forbidden, {e.errors}")
                     else:
                         raise e
+    elif event == "commit_comment":
+        if action != 'created':
+            logger.info(f"Thread: {delivery}: Ignore action {action}")
+        else:
+            html_url = data['comment']['html_url']
+            api_request_url = data['comment']['url']
+            node_id = data['comment']['node_id']
+            body = data['comment']['body']
+            logger.info(f"Thread: {delivery}: PR review comments received {html_url} of {api_request_url} {node_id} {body}")
+            body_trans, body_trans_by_gpt, real_translated = trans_helper.gpt_translate(body)
+            if real_translated:
+                logger.info(f"Thread: {delivery}: Body:\n{body_trans}\n")
+                try:
+                    github_helper.update_commit_comment(node_id, trans_helper.wrap_magic(body_trans, original_body=body))
+                    logger.info(f"Thread: {delivery}: Updated ok")
+                except GithubGraphQLException as e:
+                    if e.is_forbidden():
+                        print(
+                            f"Thread: {delivery}: Warning!!! Ignore update PR Review comment {node_id} failed, forbidden, {e.errors}")
+                    else:
+                        raise e
+
     else:
         logger.info(f"Thread: {delivery}: Ignore event {event}")
 
