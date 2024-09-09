@@ -1,7 +1,6 @@
 # -*- coding:utf-8 -*-
-import atexit
+import asyncio
 import os.path
-import re
 import signal
 import sys
 from threading import Event
@@ -18,15 +17,17 @@ from rich.progress import (
 from rich.prompt import Prompt, Confirm, IntPrompt
 from typing_extensions import Annotated
 
-from apps import trans, server
-from core import settings, constants
+from apps import trans
+from core import settings, constants, translate
 from core.console import console
-from core.utils import system, env
+from core.log import init_logging, logger
+from core.utils import system, env, systemd
 
 app = typer.Typer(no_args_is_help=True,
                   help="Auto trans issues/pull requests/discussions to english")
 
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
+init_logging("main", logger_path=None, logger_level=settings.LOGGER_LEVEL)
 
 
 def get_spinner_progress(transient=False):
@@ -85,50 +86,78 @@ def update_env_file():
     enable_debug = Confirm.ask("Enable debug mode?",
                                console=console,
                                default=env.get_env(constants.ENV_DEBUG))
-    if enable_debug != env.get_env(constants.ENV_DEBUG):
-        env.set_env(constants.ENV_DEBUG, enable_debug, True)
+    env.update_env(constants.ENV_DEBUG, enable_debug)
 
     github_token_ask = Prompt.ask("Please input your github token",
                                   console=console,
                                   default=env.get_env(constants.ENV_GITHUB_TOKEN))
-    if github_token_ask != env.get_env(constants.ENV_GITHUB_TOKEN):
-        env.set_env(constants.ENV_GITHUB_TOKEN, github_token_ask, True)
-    openai_key_ask = Prompt.ask("Please input your openai key",
+    env.update_env(constants.ENV_GITHUB_TOKEN, github_token_ask)
+    openai_key_ask = Prompt.ask("Please input your openai key, leave none if not use openai",
                                 console=console,
                                 default=env.get_env(constants.ENV_OPENAI_KEY))
-    if openai_key_ask != env.get_env(constants.ENV_OPENAI_KEY):
-        env.set_env(constants.ENV_OPENAI_KEY, openai_key_ask, True)
-    openai_proxy_ask = Prompt.ask("Please input your openai proxy",
-                                  console=console,
-                                  default=env.get_env(constants.ENV_OPENAI_PROXY))
-    if openai_proxy_ask != env.get_env(constants.ENV_OPENAI_PROXY):
-        env.set_env(constants.ENV_OPENAI_PROXY, openai_proxy_ask, True)
-    gemini_key_ask = Prompt.ask("Please input your gemini key",
+    env.update_env(constants.ENV_OPENAI_KEY, openai_key_ask)
+    openai_endpoint_ask = Prompt.ask("Please enter your openAI (or similar openAI interface) API url. If you use the "
+                                     "official API, you can leave it blank.",
+                                     console=console,
+                                     default=env.get_env(constants.ENV_OPENAI_URL))
+    env.update_env(constants.ENV_OPENAI_URL, openai_endpoint_ask)
+    gemini_key_ask = Prompt.ask("Please input your gemini key, leave none if not use openai",
                                 console=console,
                                 default=env.get_env(constants.ENV_GEMINI_KEY))
-    if gemini_key_ask != env.get_env(constants.ENV_GEMINI_KEY):
-        env.set_env(constants.ENV_GEMINI_KEY, gemini_key_ask, True)
+    env.update_env(constants.ENV_GEMINI_KEY, gemini_key_ask)
+    if env.get_env(constants.ENV_OPENAI_KEY):
+        gpt_model_ask = Prompt.ask("Please input your gpt model",
+                                   console=console,
+                                   default=env.get_env(constants.ENV_GPT_MODEL, "gpt-4-1106-preview"))
+        env.update_env(constants.ENV_GPT_MODEL, gpt_model_ask)
+    else:
+        gemini_model_ask = Prompt.ask("Please input your gemini model",
+                                      console=console,
+                                      default=env.get_env(constants.ENV_GEMINI_MODEL, "gemini-1.5-flash"))
+        env.update_env(constants.ENV_GEMINI_MODEL, gemini_model_ask)
+    api_request_limit_ask = IntPrompt.ask("Please input your api request limit",
+                                          console=console,
+                                          default=env.get_env(constants.ENV_API_REQUEST_LIMIT, 10))
+    env.update_env(constants.ENV_API_REQUEST_LIMIT, api_request_limit_ask)
     secret_key_ask = Prompt.ask("Please input your github webhook secret key",
                                 console=console,
                                 default=env.get_env(constants.ENV_SECRET_KEY))
-    if secret_key_ask != env.get_env(constants.ENV_SECRET_KEY):
-        env.set_env(constants.ENV_SECRET_KEY, secret_key_ask, True)
+    env.update_env(constants.ENV_SECRET_KEY, secret_key_ask)
+    proxy_url_ask = Prompt.ask("Please input your proxy url, leave none if no proxy",
+                               console=console,
+                               default=env.get_env(constants.ENV_PROXY_URL))
+    env.update_env(constants.ENV_PROXY_URL, proxy_url_ask)
+    webhook_listen_host_ask = Prompt.ask("Please input your webhook listen host",
+                                         console=console,
+                                         default=env.get_env(constants.ENV_WEB_HOOK_LISTEN_HOST, "127.0.0.1"))
+    env.update_env(constants.ENV_WEB_HOOK_LISTEN_HOST, webhook_listen_host_ask)
     while True:
-        server_port_ask = IntPrompt.ask("Please input your server listen port",
+        server_port_ask = IntPrompt.ask("Please input your webhook listen port",
                                         console=console,
-                                        default=env.get_env(constants.ENV_SERVER_PORT))
+                                        default=env.get_env(constants.ENV_WEB_HOOK_LISTEN_PORT, 8080))
         if not (0 < server_port_ask < 65535):
             console.print("Server port must be a number and between 0 and 65535", style="bold red")
         else:
-            if server_port_ask != env.get_env(constants.ENV_SERVER_PORT):
-                env.set_env(constants.ENV_SERVER_PORT, server_port_ask, True)
+            env.update_env(constants.ENV_WEB_HOOK_LISTEN_PORT, server_port_ask)
             break
+    auto_reload_ask = Confirm.ask("Enable auto reload?",
+                                  console=console,
+                                  default=env.get_env(constants.ENV_AUTO_RELOAD))
+    env.update_env(constants.ENV_AUTO_RELOAD, auto_reload_ask)
+    webhook_workers_ask = IntPrompt.ask("Please input your webhook workers",
+                                        console=console,
+                                        default=env.get_env(constants.ENV_WEB_HOOK_WORKERS, 1))
+    env.update_env(constants.ENV_WEB_HOOK_WORKERS, webhook_workers_ask)
+    webhook_access_log_ask = Confirm.ask("Enable webhook access log?",
+                                         console=console,
+                                         default=env.get_env(constants.ENV_WEB_HOOK_ACCESS_LOG))
+    env.update_env(constants.ENV_WEB_HOOK_ACCESS_LOG, webhook_access_log_ask)
     console.print("Update .env file success", style="bold green")
 
 
 def install_panel():
     """
-    Install panel
+    Install app
     :return:
     """
     installed_flag_file = os.path.join(BASE_PATH, ".installed")
@@ -168,56 +197,8 @@ def auto_start_when_boot(enable: Annotated[bool, typer.Option(help="Enable Auto 
     Auto start when boot
     :return:
     """
-    install_startup()
-    system.run_cmd("chmod +x /etc/rc.local", True, True)
-    with open("/etc/rc.local", "r") as f:
-        content = f.read()
-    if re.search(r"bash ./run.sh start_server", content):
-        is_enable = True
-        console.print("Current is auto start when boot", style="bold green")
-    else:
-        is_enable = False
-        console.print("Current is not auto start when boot", style="bold green")
-    if is_enable == enable:
-        console.print("Current mode not changed", style="bold red")
-        return
-    if enable:
-        content = content.replace("exit 0", f"cd {BASE_PATH}\nbash ./run.sh start_server\nexit 0")
-    else:
-        content = content.replace(f"cd {BASE_PATH}\nbash ./run.sh start_server\n", "")
-    with open("/etc/rc.local", "w") as f:
-        f.write(content)
-    console.print("You have set auto start when boot is %s" % enable, style="bold green")
-
-
-def install_startup():
-    rc_content = open("./deploy/config/systemd/rc.local", "r").read()
-    is_need_systemd_service = False
-    if not os.path.exists("/etc/rc.local"):
-        with open("/etc/rc.local", "w") as f:
-            f.write("#!/bin/sh -e\n")
-            f.write(rc_content)
-            f.write("exit 0\n")
-        os.chmod("/etc/rc.local", 0o755)
-        is_need_systemd_service = True
-    else:
-        with open("/etc/rc.local", "r") as f:
-            content = f.read()
-        if rc_content not in content:
-            with open("/etc/rc.local", "w") as f:
-                f.write(content.replace("exit 0", rc_content + "\nexit 0"))
-            os.chmod("/etc/rc.local", 0o755)
-    if is_need_systemd_service:
-        console.print("Installing startup", style="bold green")
-        rc_local_service_content = open("./deploy/config/systemd/rc-local.service", "r").read()
-        if not os.path.exists("/etc/systemd/system/rc-local.service"):
-            with open("/etc/systemd/system/rc-local.service", "w") as f:
-                f.write(rc_local_service_content)
-            os.chmod("/etc/systemd/system/rc-local.service", 0o755)
-            system.run_cmd("systemctl enable rc-local", True, True)
-            system.run_cmd("systemctl daemon-reload", True, True)
-            system.run_cmd("systemctl start rc-local", True, True)
-        console.print("Install startup success", style="bold green")
+    systemd.install_startup()
+    systemd.auto_start_when_boot(enable)
 
 
 @app.command("trans_issues", help="Translate a specific issue into english")
@@ -226,14 +207,78 @@ def trans_issues(input_url: Annotated[str, typer.Option(help="GitHub issue URL, 
                  github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
                                                                 "github_pat_xxx_yyyyyy",
                                                            envvar=[constants.ENV_GITHUB_TOKEN])],
-                 openai_key: Annotated[str, typer.Option(help="OpenAI API key, for example, xxxyyyzzz")] = None,
-                 openai_proxy: Annotated[str, typer.Option(help="OpenAI API proxy, for example, x.y.z")] = None,
-                 gemini_key: Annotated[str, typer.Option(help="Gemini API key, for example, xxxyyyzzz")] = None):
+                 openai_key: Annotated[str, typer.Option(
+                     help="OpenAI API key, for example, xxxyyyzzz")] = None,
+                 openai_url: Annotated[str, typer.Option(
+                     help=" OpenAI (or similar openAI interface) API Url, for example, "
+                          "http://127.0.0.1:8118/v1/")] = None,
+                 gemini_key: Annotated[str, typer.Option(
+                     help="Gemini API key, for example, xxxyyyzzz")] = None,
+                 proxy_url: Annotated[str, typer.Option(
+                     help="Proxy URL, used for openai or gemini api, for example, http://127.0.0.1:8118")] = None
+                 ):
     """
     Translate issues to english
     :return:
     """
-    setup_result = settings.setup_env(github_token, openai_key, openai_proxy, gemini_key)
+    setup_result = settings.setup_env(github_token, openai_key, openai_url, gemini_key, proxy_url)
+    if not setup_result:
+        return
+    asyncio.run(trans.trans_issues(input_url))
+
+
+@app.command("test", help="Test translate")
+def test_translate(github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
+                                                                  "github_pat_xxx_yyyyyy",
+                                                             envvar=[constants.ENV_GITHUB_TOKEN])],
+                   openai_key: Annotated[str, typer.Option(
+                       help="OpenAI API key, for example, xxxyyyzzz")] = None,
+                   openai_url: Annotated[str, typer.Option(
+                       help=" OpenAI (or similar openAI interface) API Url, for example, "
+                            "http://127.0.0.1:8118/v1/")] = None,
+                   gemini_key: Annotated[str, typer.Option(
+                       help="Gemini API key, for example, xxxyyyzzz")] = None,
+                   proxy_url: Annotated[str, typer.Option(
+                       help="Proxy URL, used for openai or gemini api, for example, http://127.0.0.1:8118")] = None
+                   ):
+    setup_result = settings.setup_env(github_token, openai_key, openai_url, gemini_key, proxy_url)
+    if not setup_result:
+        return
+    console.print("Test translate, the original content is:", style="bold green")
+    with open(os.path.join(BASE_PATH, "./test/test_issues.md"), "r") as f:
+        md = f.read()
+        console.print(md)
+        translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+        translated_body, has_translated_by_gpt, real_translated = asyncio.run(translator.translate(md))
+        if translated_body and real_translated:
+            console.print("The translated content is:", style="bold green")
+            console.print(translated_body)
+        else:
+            console.print("The translated content is empty", style="bold red")
+
+
+@app.command("trans_commit", help="Translate a specific commit into english")
+def trans_commit(input_url: Annotated[str, typer.Option(
+    help="GitHub commit URL, for example, "
+         "https://github.com/your-org/your-repository/commit/8768ec2f6bacc204f167ef19f15fb869664d9410")],
+                 github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
+                                                                "github_pat_xxx_yyyyyy",
+                                                           envvar=[constants.ENV_GITHUB_TOKEN])],
+                 openai_key: Annotated[str, typer.Option(
+                     help="OpenAI API key, for example, xxxyyyzzz")] = None,
+                 openai_url: Annotated[str, typer.Option(
+                     help=" OpenAI (or similar openAI interface) API Url, for example, "
+                          "http://127.0.0.1:8118/v1/")] = None,
+                 gemini_key: Annotated[str, typer.Option(
+                     help="Gemini API key, for example, xxxyyyzzz")] = None,
+                 proxy_url: Annotated[str, typer.Option(
+                     help="Proxy URL, used for openai or gemini api, for example, http://127.0.0.1:8118")] = None
+                 ):
+    """
+    Translate issues to english
+    :return:
+    """
+    setup_result = settings.setup_env(github_token, openai_key, openai_url, gemini_key, proxy_url)
     if not setup_result:
         return
     trans.trans_issues(input_url)
@@ -245,14 +290,21 @@ def trans_discussion(input_url: Annotated[str, typer.Option(help="GitHub discuss
                      github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
                                                                     "github_pat_xxx_yyyyyy",
                                                                envvar=[constants.ENV_GITHUB_TOKEN])],
-                     openai_key: Annotated[str, typer.Option(help="OpenAI API key, for example, xxxyyyzzz")] = None,
-                     openai_proxy: Annotated[str, typer.Option(help="OpenAI API proxy, for example, x.y.z")] = None,
-                     gemini_key: Annotated[str, typer.Option(help="Gemini API key, for example, xxxyyyzzz")] = None):
+                     openai_key: Annotated[str, typer.Option(
+                         help="OpenAI API key, for example, xxxyyyzzz")] = None,
+                     openai_url: Annotated[str, typer.Option(
+                         help=" OpenAI (or similar openAI interface) API Url, for example, "
+                              "http://127.0.0.1:8118/v1/")] = None,
+                     gemini_key: Annotated[str, typer.Option(
+                         help="Gemini API key, for example, xxxyyyzzz")] = None,
+                     proxy_url: Annotated[str, typer.Option(
+                         help="Proxy URL, used for openai or gemini api, for example, http://127.0.0.1:8118")] = None
+                     ):
     """
     Translate issues to english
     :return:
     """
-    setup_result = settings.setup_env(github_token, openai_key, openai_proxy, gemini_key)
+    setup_result = settings.setup_env(github_token, openai_key, openai_url, gemini_key, proxy_url)
     if not setup_result:
         return
     trans.trans_discussion(input_url)
@@ -264,14 +316,21 @@ def trans_pr(input_url: Annotated[str, typer.Option(help="GitHub PR URL, for exa
              github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
                                                             "github_pat_xxx_yyyyyy",
                                                        envvar=[constants.ENV_GITHUB_TOKEN])],
-             openai_key: Annotated[str, typer.Option(help="OpenAI API key, for example, xxxyyyzzz")] = None,
-             openai_proxy: Annotated[str, typer.Option(help="OpenAI API proxy, for example, x.y.z")] = None,
-             gemini_key: Annotated[str, typer.Option(help="Gemini API key, for example, xxxyyyzzz")] = None):
+             openai_key: Annotated[str, typer.Option(
+                 help="OpenAI API key, for example, xxxyyyzzz")] = None,
+             openai_url: Annotated[str, typer.Option(
+                 help=" OpenAI (or similar openAI interface) API Url, for example, "
+                      "http://127.0.0.1:8118/v1/")] = None,
+             gemini_key: Annotated[str, typer.Option(
+                 help="Gemini API key, for example, xxxyyyzzz")] = None,
+             proxy_url: Annotated[str, typer.Option(
+                 help="Proxy URL, used for openai or gemini api, for example, http://127.0.0.1:8118")] = None
+             ):
     """
     Translate issues to english
     :return:
     """
-    setup_result = settings.setup_env(github_token, openai_key, openai_proxy, gemini_key)
+    setup_result = settings.setup_env(github_token, openai_key, openai_url, gemini_key, proxy_url)
     if not setup_result:
         return
     trans.trans_pr(input_url)
@@ -287,48 +346,41 @@ def batch_trans(input_url: Annotated[
                     str, typer.Option(
                         help="The filter can be [issue, pr, pullrequest, discussion], for example, issue")],
                 query_limit: Annotated[int, typer.Option(help="Maximum quantity at a time, for example 10")] = 10,
-                openai_key: Annotated[str, typer.Option(help="OpenAI API key, for example, xxxyyyzzz")] = None,
-                openai_proxy: Annotated[str, typer.Option(help="OpenAI API proxy, for example, x.y.z")] = None,
-                gemini_key: Annotated[str, typer.Option(help="Gemini API key, for example, xxxyyyzzz")] = None):
+                openai_key: Annotated[str, typer.Option(
+                    help="OpenAI API key, for example, xxxyyyzzz")] = None,
+                openai_url: Annotated[str, typer.Option(
+                    help=" OpenAI (or similar openAI interface) API Url, for example, "
+                         "http://127.0.0.1:8118/v1/")] = None,
+                gemini_key: Annotated[str, typer.Option(
+                    help="Gemini API key, for example, xxxyyyzzz")] = None,
+                proxy_url: Annotated[str, typer.Option(
+                    help="Proxy URL, used for openai or gemini api, for example, http://127.0.0.1:8118")] = None
+                ):
     """
     Translate issues to english
     :return:
     """
-    setup_result = settings.setup_env(github_token, openai_key, openai_proxy, gemini_key)
+    setup_result = settings.setup_env(github_token, openai_key, openai_url, gemini_key, proxy_url)
     if not setup_result:
         return
     trans.batch_trans(input_url, query_filter, query_limit)
 
 
-@app.command("start_server", help="Start the GitHub webhook server")
-def start_server(listen_port: Annotated[int, typer.Option(help="Listen port, for example, 15372",
-                                                          min=1, max=65535, clamp=True,
-                                                          envvar=[constants.ENV_SERVER_PORT])],
-                 github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
-                                                                "github_pat_xxx_yyyyyy",
-                                                           envvar=[constants.ENV_GITHUB_TOKEN])],
-                 secret_key: Annotated[str, typer.Option(help="Secret key, for example, xxx_yyyyyy")] = None,
-                 openai_key: Annotated[str, typer.Option(help="OpenAI API key, for example, xxxyyyzzz")] = None,
-                 openai_proxy: Annotated[str, typer.Option(help="OpenAI API proxy, for example, x.y.z")] = None,
-                 gemini_key: Annotated[str, typer.Option(help="Gemini API key, for example, xxxyyyzzz")] = None):
+@app.command("webhook", help="The GitHub webhook server")
+def start_bot_webhook(command: Annotated[str, typer.Argument(help="start/stop/restart")]):
     """
-    Translate issues to english
+    Manage the webhook service
     :return:
     """
-    setup_result = settings.setup_env(github_token, openai_key, openai_proxy, gemini_key, secret_key)
-    if not setup_result:
-        return
-    atexit.register(system.delete_pid_file)
-    if not system.check_pid_status():
-        return
-    console.print("Starting server", style="bold green")
-    console.print(f"Your webhook is running at http://0.0.0.0:{listen_port}/api/v1/hooks", style="bold green")
-    console.print(f"Your webhook secret key is {settings.get_secret_key()}", style="bold green")
-    server.app.run(host="0.0.0.0", port=listen_port,
-                   debug=settings.DEBUG,
-                   auto_reload=settings.DEBUG,
-                   workers=1,
-                   access_log=not settings.DEBUG)
+    from services import webhook
+    if command == "start":
+        webhook.webhook_service.start()
+    elif command == "stop":
+        webhook.webhook_service.stop()
+    elif command == "restart":
+        webhook.webhook_service.restart()
+    else:
+        console.print("Invalid command", style="bold red")
 
 
 if __name__ == "__main__":

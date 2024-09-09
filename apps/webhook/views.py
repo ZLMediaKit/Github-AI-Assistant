@@ -1,45 +1,23 @@
 # -*- coding:utf-8 -*-
 __author__ = 'alex'
 
-import asyncio
-import hashlib
-import logging
-from concurrent.futures import ThreadPoolExecutor
-
-from sanic import Sanic, response, text, Request
-from sanic.log import logger as sanic_logger
+from sanic import Sanic, response, Request
 from sanic.response import empty
 
-from apps import trans
-from core.utils import loop_utls
-from core import settings, github_helper
-from core.log import LOGGING_CONFIG_DEFAULTS, logger
+from apps.webhook import handles
+from core import settings
+from core.log import logger
+from core.utils import github
 
-loop_utls.use_uvloop()
-
-app = Sanic("Webhook", strict_slashes=True, log_config=LOGGING_CONFIG_DEFAULTS)
-app.ctx.threads = ThreadPoolExecutor()
+app_instance = Sanic.get_app()
 
 
-@app.before_server_start
-async def before_start(app_instance, loop):
-    if settings.DEBUG:
-        sanic_logger.setLevel(logging.DEBUG)
-    else:
-        sanic_logger.setLevel(logging.INFO)
-
-
-@app.before_server_stop
-async def before_stop(app_instance: Sanic, loop):
-    pass
-
-
-@app.post("/api/v1/hooks")
+@app_instance.post("/api/v1/hooks")
 async def github_hook(request: Request):
     secret_key = settings.get_secret_key()
     if secret_key:
         try:
-            github_helper.verify_signature(request.body, secret_key, request.headers.get("X-Hub-Signature-256"))
+            github.verify_signature(request.body, secret_key, request.headers.get("X-Hub-Signature-256"))
         except Exception as e:
             logger.error(f"verify_signature failed: {e}")
             return response.json({"message": "invalid secret_key"}, status=403)
@@ -55,9 +33,9 @@ async def github_hook(request: Request):
         hook = data['hook']['config']['url']
     logger.info(f"{request_delivery}: Get event={request_event}, hook={hook}, headers={request.headers}")
 
-    if request_event in github_helper.ALLOWED_EVENTS:
+    if request_event in github.ALLOWED_EVENTS:
         logger.info(f"{request_delivery}: handle {request_event}")
-        app.ctx.threads.submit(trans.handle_github_request, data, request_event, request_delivery, request.headers)
+        _ = app_instance.add_task(handles.handle_github_request(data, request_event, request_delivery, request.headers))
     else:
-        print(f"{request_delivery}: Ignore event {request_event}")
+        logger.info(f"{request_delivery}: Ignore event {request_event}")
     return empty(status=200)

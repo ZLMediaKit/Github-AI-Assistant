@@ -2,12 +2,17 @@
 __author__ = 'alex'
 
 import os
+from typing import Any
+
 import dotenv
+
+from core.console import console
+from core.utils import strings
 
 default_env_path = [dotenv.find_dotenv()]
 
 
-def load_env(env_path=None):
+def load_env(env_path: str = None):
     """
     load env from .env file
     :param env_path:
@@ -19,7 +24,7 @@ def load_env(env_path=None):
     dotenv.load_dotenv(env_path)
 
 
-def get_env(key, default=None):
+def get_env(key: str, default=None) -> bool | int | str | float | Any:
     """
     get env value
     :param key:
@@ -35,6 +40,9 @@ def get_env(key, default=None):
     if isinstance(value, str):
         if value.isdigit():
             return int(value)
+        # 判断是否是ip地址
+        elif strings.is_ip_address(value):
+            return value
         elif value.replace(".", "").isdigit():
             return float(value)
     return value
@@ -56,3 +64,15 @@ def set_env(key, value, update_env_file=False):
     if update_env_file:
         dotenv.set_key(default_env_path[0], key, value)
 
+
+def update_env(key, value):
+    """
+    update env value
+    :param key:
+    :param value:
+    :return:
+    """
+    old_value = get_env(key)
+    if value != old_value:
+        set_env(key, value, True)
+        console.print(f"update {key} from {old_value} to {value}")

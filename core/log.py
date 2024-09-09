@@ -1,7 +1,6 @@
 # -*- coding:utf-8 -*-
 __author__ = 'alex'
 
-# 设置日志
 import logging.config
 import os
 import re
@@ -13,7 +12,7 @@ from typing import Dict, Any
 from rich.console import Console
 from rich.logging import RichHandler
 
-from core import settings
+PROJECT_BASE_PATH = BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 class NoEscapeSeqFormatter(logging.Formatter):
@@ -59,7 +58,7 @@ LOGGING_CONFIG_DEFAULTS: Dict[str, Any] = dict(  # no cov
         },
         "sanic.access": {
             "level": "INFO",
-            "handlers": ["access_console", "file"],
+            "handlers": ["access_console", "access_file"],
             "propagate": True,
             "qualname": "sanic.access",
         },
@@ -143,27 +142,35 @@ class VerbosityFilter(logging.Filter):
 
 _verbosity_filter = VerbosityFilter()
 logger = logging.getLogger("default")
-if settings.DEBUG:
-    logger_level = logging.DEBUG
-else:
-    logger_level = logging.INFO
 
-logger.setLevel(logger_level)
-log_path = os.path.join(settings.BASE_PATH, 'logs')
-if not os.path.exists(log_path):
-    os.makedirs(log_path)
-log_file = os.path.join(log_path, 'app.log')
-fh = TimedRotatingFileHandler(log_file, when="D", interval=1, backupCount=3)
-fh.setLevel(logger_level)
 
-ch = RichHandler(console=Console(), rich_tracebacks=True, markup=True, locals_max_length=0,
-                 locals_max_string=0)
-ch.setLevel(logger_level)
+def init_logging(app_name: str, logger_path: str = None, logger_level: int = logging.INFO) -> None:
+    """
+    Initialize logging defaults for Project.
+    :param app_name:
+    :param logger_level:
+    :param logger_path:
+    """
+    logger.handlers = []
+    logger.setLevel(logger_level)
+    if not logger_path:
+        logger_path = os.path.join(PROJECT_BASE_PATH, 'logs')
+    if not os.path.exists(logger_path):
+        os.makedirs(logger_path)
 
-formatter = NoEscapeSeqFormatter("%(asctime)s [%(process)s] [%(levelname)s] %(message)s",
-                                 datefmt="[%Y-%m-%d %H:%M:%S %z]")
-fh.setFormatter(formatter)
-ch.setFormatter(logging.Formatter("%(message)s",
-                                  datefmt="[%Y-%m-%d %H:%M:%S %z]"))
-logger.addHandler(fh)
-logger.addHandler(ch)
+    log_file = os.path.join(logger_path, f'{app_name}.log')
+    print(f"The log file is: {log_file}")
+    fh = TimedRotatingFileHandler(log_file, when="D", interval=1, backupCount=3)
+    fh.setLevel(logger_level)
+
+    ch = RichHandler(console=Console(), rich_tracebacks=True, markup=True, locals_max_length=0,
+                     locals_max_string=0)
+    ch.setLevel(logger_level)
+
+    formatter = NoEscapeSeqFormatter("%(asctime)s [%(process)s] [%(levelname)s] %(message)s",
+                                     datefmt="[%Y-%m-%d %H:%M:%S %z]")
+    fh.setFormatter(formatter)
+    ch.setFormatter(logging.Formatter("%(message)s",
+                                      datefmt="[%Y-%m-%d %H:%M:%S %z]"))
+    logger.addHandler(fh)
+    logger.addHandler(ch)
