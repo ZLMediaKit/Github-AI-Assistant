@@ -210,16 +210,16 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
         return len(text.split()) < 750  # 假设平均每个token对应1.33个单词
 
     async def translate_simple_text(self, text: str) -> str | None:
-        prompt = f"""Translate the following text to English. 
-        Preserve any existing formatting or punctuation:
-
-        {text}"""
-        messages = [{"role": "user", "content": prompt}]
+        prompt = f"Translate the following text to English. Preserve any existing formatting or punctuation:"
+        content = f"{prompt}\n{text}"
+        messages = [{"role": "user", "content": content}]
         translated, trans_success = await self.rate_limited_do_gpt_translate(
             self.PROMPT_SYSTEM,
             messages)
         if not trans_success:
             return None
+        # 翻译的结果中有可能包含了prompt，需要去掉, 使用正则表达式去掉
+        translated = re.sub(rf"^{re.escape(prompt)}\n", "", translated, flags=re.MULTILINE)
         return translated
 
     def _preprocess_markdown(self, markdown: str) -> Tuple[str, Dict[str, str]]:
@@ -302,19 +302,17 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
 
     async def _translate_chunks(self, chunks: List[str]) -> List[str]:
         async def translate_chunk(chunk):
-            prompt = f"""Translate the following GitHub Flavored Markdown text to English. 
-            Do not change any formatting, placeholders, or Markdown syntax. 
-            Preserve all line breaks and spacing:
-
-            {chunk}"""
+            prompt = f"Translate the following GitHub Flavored Markdown text to English. Do not change any formatting, placeholders, or Markdown syntax. Preserve all line breaks and spacing:"
             if self.check_english(chunk):
                 return chunk
-            messages = [{"role": "user", "content": prompt}]
+            content = f"{prompt}\n{chunk}"
+            messages = [{"role": "user", "content": content}]
             translated, trans_success = await self.rate_limited_do_gpt_translate(
                 self.PROMPT_SYSTEM,
                 messages)
             if not trans_success:
                 return chunk
+            translated = re.sub(rf"^{re.escape(prompt)}\n", "", translated, flags=re.MULTILINE)
             return translated
 
         tasks = [translate_chunk(chunk) for chunk in chunks]
