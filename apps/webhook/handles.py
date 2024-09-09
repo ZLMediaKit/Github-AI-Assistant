@@ -2,7 +2,7 @@
 from sanic.log import logger
 
 from apps import trans
-from core import translate
+from core import translate, settings
 from core.exception import GithubGraphQLException
 from core.utils import github
 
@@ -38,11 +38,12 @@ async def handle_github_request(data, event, delivery, headers):
                 has_translated_by_gpt = True
                 logger.info(f"Already translated, skip")
                 return has_translated_by_gpt
-            body_trans, body_trans_by_gpt, real_translated = await translate.gpt_translate(body)
+            translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+            translated_body, has_translated_by_gpt, real_translated = await translator.translate(body)
             if real_translated:
-                logger.info(f"Thread: {delivery}: Body:\n{body_trans}\n")
+                logger.info(f"Thread: {delivery}: Body:\n{translated_body}\n")
                 try:
-                    await github.update_issue_comment(node_id, translate.wrap_magic(body_trans, original_body=body))
+                    await github.update_issue_comment(node_id, translate.wrap_magic(translated_body, original_body=body))
                     logger.info(f"Thread: {delivery}: Updated ok")
                 except GithubGraphQLException as e:
                     if e.is_forbidden():
@@ -72,12 +73,13 @@ async def handle_github_request(data, event, delivery, headers):
                 has_translated_by_gpt = True
                 logger.info(f"Already translated, skip")
                 return has_translated_by_gpt
-            body_trans, body_trans_by_gpt, real_translated = await translate.gpt_translate(body)
+            translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+            translated_body, has_translated_by_gpt, real_translated = await translator.translate(body)
             if real_translated:
-                logger.info(f"Thread: {delivery}: Body:\n{body_trans}\n")
+                logger.info(f"Thread: {delivery}: Body:\n{translated_body}\n")
                 try:
                     await github.update_discussion_comment(node_id,
-                                                           translate.wrap_magic(body_trans, original_body=body))
+                                                           translate.wrap_magic(translated_body, original_body=body))
                     logger.info(f"Thread: {delivery}: Updated ok")
                 except GithubGraphQLException as e:
                     if e.is_forbidden():
@@ -103,13 +105,14 @@ async def handle_github_request(data, event, delivery, headers):
             node_id = data['review']['node_id']
             body = data['review']['body']
             logger.info(f"Thread: {delivery}: Got a PR review {html_url} of {pull_request_url} {node_id} {body}")
-            body_trans, body_trans_by_gpt, real_translated = await translate.gpt_translate(body)
+            translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+            translated_body, has_translated_by_gpt, real_translated = await translator.translate(body)
 
             if real_translated:
-                logger.info(f"Thread: {delivery}: Body:\n{body_trans}\n")
+                logger.info(f"Thread: {delivery}: Body:\n{translated_body}\n")
                 try:
                     await github.update_pullrequest_review(node_id,
-                                                           translate.wrap_magic(body_trans, original_body=body))
+                                                           translate.wrap_magic(translated_body, original_body=body))
                     logger.info(f"Thread: {delivery}: Updated ok")
                 except GithubGraphQLException as e:
                     if e.is_forbidden():
@@ -127,12 +130,13 @@ async def handle_github_request(data, event, delivery, headers):
             body = data['comment']['body']
             logger.info(
                 f"Thread: {delivery}: PR review comments received {html_url} of {pull_request_url} {node_id} {body}")
-            body_trans, body_trans_by_gpt, real_translated = await translate.gpt_translate(body)
+            translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+            translated_body, has_translated_by_gpt, real_translated = await translator.translate(body)
             if real_translated:
-                logger.info(f"Thread: {delivery}: Body:\n{body_trans}\n")
+                logger.info(f"Thread: {delivery}: Body:\n{translated_body}\n")
                 try:
                     await github.update_pullrequest_review_comment(node_id,
-                                                                   translate.wrap_magic(body_trans,
+                                                                   translate.wrap_magic(translated_body,
                                                                                         original_body=body))
                     logger.info(f"Thread: {delivery}: Updated ok")
                 except GithubGraphQLException as e:
@@ -151,11 +155,12 @@ async def handle_github_request(data, event, delivery, headers):
             body = data['comment']['body']
             logger.info(f"Thread: {delivery}: commit comments received {html_url} of {api_request_url} {node_id}"
                         f" {body}")
-            body_trans, body_trans_by_gpt, real_translated = await translate.gpt_translate(body)
+            translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+            translated_body, has_translated_by_gpt, real_translated = await translator.translate(body)
             if real_translated:
-                logger.info(f"Thread: {delivery}: Body:\n{body_trans}\n")
+                logger.info(f"Thread: {delivery}: Body:\n{translated_body}\n")
                 try:
-                    await github.update_commit_comment(node_id, translate.wrap_magic(body_trans, original_body=body))
+                    await github.update_commit_comment(node_id, translate.wrap_magic(translated_body, original_body=body))
                     logger.info(f"Thread: {delivery}: Updated ok")
                 except GithubGraphQLException as e:
                     if e.is_forbidden():
