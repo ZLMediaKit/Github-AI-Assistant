@@ -15,7 +15,7 @@ from core.discover import autodiscover
 from core.log import LOGGING_CONFIG_DEFAULTS
 from core.utils import asyncio_utls
 
-loop_utls.use_uvloop()
+asyncio_utls.use_uvloop()
 
 
 def create_app(app_name: str) -> Sanic:
