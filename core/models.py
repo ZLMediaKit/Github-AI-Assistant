@@ -11,6 +11,8 @@ DETAIL_TYPE_COMMIT = "commit"
 class Label(BaseModel):
     id: str
     name: str
+    color: str = "f29513"
+    description: str = None
 
 
 class Comment(BaseModel):
@@ -84,3 +86,4 @@ class Discussion(BaseModel):
     body: str
     labels: List[Label]
     comments: List[Comment]
+

@@ -11,13 +11,13 @@ from pydantic import BaseModel
 
 from core import settings
 from core.exception import GithubGraphQLException
-from core.models import IssueDetail, DiscussionDetail, PullRequestDetail
+from core.models import IssueDetail, DiscussionDetail, PullRequestDetail, Label
 
 ALLOWED_EVENTS = ['pull_request', 'pull_request_review', 'pull_request_review_comment', 'issues', 'issue_comment',
                   'discussion', 'discussion_comment', 'commit_comment']
-LABEL_TRANS_NAME = "TransByAI"
-LABEL_REFINED_NAME = "RefinedByAI"
-LABEL_ENGLISH_NATIVE = "EnglishNative"
+LABEL_TRANS = Label(name="TransByAI", color="bfdadc", description="Translated by AI", id="")
+LABEL_REFINED = Label(name="RefinedByAI", color="f29513", description="Refined by AI", id="")
+LABEL_ENGLISH_NATIVE = Label(name="EnglishNative", color="C3A138", description="English Native", id="")
 IGNORE_LOGIN = 'dependabot'
 
 
@@ -335,8 +335,11 @@ async def query_label_id(owner, name, label):
     '''
 
     result = await do_post_requests({"query": query, "variables": {"name": name, "owner": owner, "label": label}})
-    label_id = result['data']['repository']['label']['id']
-    return label_id
+    try:
+        label_id = result['data']['repository']['label']['id']
+        return label_id
+    except Exception as e:
+        return None
 
 
 async def query_pullrequest_all_in_one(repo_model: RepoDetail) -> PullRequestDetail:
@@ -663,6 +666,51 @@ async def create_issue(repository_id, title, body):
     issue_id = result['data']['createIssue']['issue']['id']
     issue_url = result['data']['createIssue']['issue']['url']
     return issue_id, issue_url
+
+
+async def create_label(repository_id, name, color, description=None) -> str:
+    query = '''
+        mutation ($repositoryId: ID!, $name: String!, $color: String!, $description: String) {
+          createLabel(input: {repositoryId: $repositoryId, name: $name, color: $color, description: $description}) {
+            label {
+              id
+              name
+              color
+              description
+            }
+          }
+        }
+    '''
+    variables = {
+        "repositoryId": repository_id,
+        "name": name,
+        "color": color,
+        "description": description
+    }
+    result = await do_post_requests({"query": query, "variables": variables})
+    return result['data']['createLabel']['label']['id']
+
+
+async def get_repo_id(owner: str, name: str) -> str:
+    query = '''
+        query GetRepoId($owner: String!, $name: String!) {
+          repository(owner: $owner, name: $name) {
+            id
+          }
+        }
+    '''
+    variables = {
+        "owner": owner,
+        "name": name,
+    }
+    result = await do_post_requests({"query": query, "variables": variables})
+    return result['data']['repository']['id']
+
+
+async def create_label_with_repo_details(owner: str, name: str, label: Label) -> str:
+    repo_id = await get_repo_id(owner, name)
+    result = await create_label(repo_id, label.name, label.color, label.description)
+    return result
 
 
 async def create_discussion(repository_id, title, body, category_id):

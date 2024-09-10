@@ -6,7 +6,7 @@ from typing import List
 from core import translate, models, settings
 from core.exception import GithubGraphQLException
 from core.log import logger
-from core.models import BaseDetail, Comment
+from core.models import BaseDetail, Comment, Label
 from core.utils import github
 from core.utils.github import RepoDetail
 
@@ -78,9 +78,9 @@ async def trans_detail(detail_type: str, detail: BaseDetail, repo_detail: RepoDe
     has_gpt_label = False
     has_en_native_label = False
     for label in detail.labels:
-        if label.name == github.LABEL_TRANS_NAME:
+        if label.name == github.LABEL_TRANS.name:
             has_gpt_label = True
-        if label.name == github.LABEL_ENGLISH_NATIVE:
+        if label.name == github.LABEL_ENGLISH_NATIVE.name:
             has_en_native_label = True
     logger.info("")
     logger.info(detail.get_detail_text())
@@ -120,7 +120,7 @@ async def trans_detail(detail_type: str, detail: BaseDetail, repo_detail: RepoDe
     if translated_by_gpt or has_gpt_label:
         logger.info(f"Label is already set, skip")
     else:
-        await add_label(detail.id, repo_detail, github.LABEL_TRANS_NAME)
+        await add_label(detail.id, repo_detail, github.LABEL_TRANS)
         has_gpt_label = True
 
     if not translated_by_gpt and not has_gpt_label and not has_en_native_label:
@@ -128,12 +128,18 @@ async def trans_detail(detail_type: str, detail: BaseDetail, repo_detail: RepoDe
     logger.info("Translation completed")
 
 
-async def add_label(detail_id: str, repo_detail: RepoDetail, label_name: str):
-    logger.info(f"Add label {label_name}")
-    label_id = await github.query_label_id(repo_detail.owner, repo_detail.name, label_name)
-    logger.info(f"Query LABEL_TRANS_NAME={label_name}, got LABEL_ID={label_id}")
-    await github.add_label(detail_id, label_id)
-    logger.info(f"Add label successful, {label_id}({label_name})")
+async def add_label(detail_id: str, repo_detail: RepoDetail, label: Label):
+    logger.info(f"Add label {label.name} to {detail_id}")
+    label_id = await github.query_label_id(repo_detail.owner, repo_detail.name, label.name)
+    if label_id is None:
+        try:
+            label_id = await github.create_label_with_repo_details(repo_detail.owner, repo_detail.name, label)
+        except Exception as e:
+            logger.exception(f"Create label failed, {e}")
+    if label_id:
+        logger.info(f"Query LABEL_TRANS_NAME={label.name}, got LABEL_ID={label_id}")
+        await github.add_label(detail_id, label_id)
+        logger.info(f"Add label successful, {label_id}({label.name})")
 
 
 async def trans_issues(issues_url):
@@ -354,7 +360,7 @@ async def batch_trans(input_url, query_filter, query_limit):
         repository["name"],
         query_filter,
         "sort:comments-desc",
-        [f"-label:{github.LABEL_TRANS_NAME}", f"-label:{github.LABEL_ENGLISH_NATIVE}"],
+        [f"-label:{github.LABEL_TRANS.name}", f"-label:{github.LABEL_ENGLISH_NATIVE.name}"],
         query_limit,
     )
 
