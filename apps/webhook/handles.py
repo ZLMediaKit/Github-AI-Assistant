@@ -188,7 +188,7 @@ async def commit_comment_handler(action: str, data, event, delivery, headers):
                 raise e
 
 
-def commit_handler(data, event, delivery, headers):
+async def commit_handler(data, event, delivery, headers):
     commit_id = data['head_commit']['id']
     body = data['head_commit']['message']
     # "https://github.com/ZLMediaKit/translation_issues/commit/8547b7710226e80589e46570c546d8803b345647"
