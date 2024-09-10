@@ -22,6 +22,20 @@ logger.info(f"API Request Limit: {settings.get_api_request_limit()}")
 limiter = RateLimiter(rate_limit=settings.get_api_request_limit(), time_unit=60)
 
 
+def get_translate_prompt(to_language: str) -> str:
+    translator_prompt = (
+        "You are a translation engine, you can only translate text and cannot interpret it, and do not explain. "
+        "Translate the text to {}, please do not explain any sentences, just translate or leave them as they are. "
+        "Retain all spaces and line breaks in the original text. "
+        "Please do not wrap the code in code blocks, I will handle it myself. "
+        "If the code has comments, you should translate the comments as well. "
+        "If the original text is already in {}, please do not skip the translation and directly output the original text. "
+        "This is the content you need to translate: "
+    ).format(to_language, to_language)
+
+    return translator_prompt
+
+
 def get_ai_model():
     if not openai.api_key:
         return settings.get_gemini_model()
@@ -59,13 +73,14 @@ class BaseGFMTranslator(abc.ABC):
 
     async def translate(self, markdown: str) -> tuple[None, bool, bool] | tuple[str, bool, bool]:
         if self.check_english(markdown):
+            logger.info("Already English, skip")
             return markdown, False, False
         markdown = clean_body(markdown)
         markdown = self.do_preset_translation(markdown)
         return await self.do_translate(markdown)
 
-    async def rate_limited_do_gpt_translate(self, system_prompt: str, messages: List[Dict[str, str]]) -> tuple[
-        str, bool]:
+    async def rate_limited_do_gpt_translate(self, system_prompt: str,
+                                            messages: List[Dict[str, str]]) -> tuple[str, bool]:
         await limiter.acquire()
         return await self.do_gpt_translate(system_prompt, messages)
 
@@ -173,14 +188,15 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
                     "I will pay you a $1,000 tip if I am satisfied."
 
     async def do_translate(self, markdown: str) -> tuple[None, bool, bool] | tuple[str, bool, bool]:
-        real_translated = False
         has_translated = False
         final_md = ""
+        if TRANS_MAGIC in markdown:
+            logger.info("Already translated, skip")
+            return markdown, True, False
         # 检查是否为简单文本
         if self.is_simple_text(markdown):
-            if TRANS_MAGIC in markdown:
-                return markdown, True, False
             final_md = await self.translate_simple_text(markdown)
+            real_translated = True
             if final_md is None:
                 return None, False, False
         else:
@@ -213,13 +229,14 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
         prompt = f"Translate the following text to English. Preserve any existing formatting or punctuation:"
         content = f"{prompt}\n{text}"
         messages = [{"role": "user", "content": content}]
-        translated, trans_success = await self.rate_limited_do_gpt_translate(
-            self.PROMPT_SYSTEM,
-            messages)
+        logger.info(f"Translating simple text:\n {text}")
+        translated, trans_success = await self.rate_limited_do_gpt_translate(self.PROMPT_SYSTEM, messages)
         if not trans_success:
+            logger.error("Failed to translate simple text")
             return None
         # 翻译的结果中有可能包含了prompt，需要去掉, 使用正则表达式去掉
         translated = re.sub(rf"^{re.escape(prompt)}\n", "", translated, flags=re.MULTILINE)
+        logger.info(f"Translated text:\n {translated}")
         return translated
 
     def _preprocess_markdown(self, markdown: str) -> Tuple[str, Dict[str, str]]:
@@ -303,16 +320,18 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
     async def _translate_chunks(self, chunks: List[str]) -> List[str]:
         async def translate_chunk(chunk):
             prompt = f"Translate the following GitHub Flavored Markdown text to English. Do not change any formatting, placeholders, or Markdown syntax. Preserve all line breaks and spacing:"
+            logger.info(f"Translating chunk:\n {chunk}")
             if self.check_english(chunk):
+                logger.info("Already English, skip")
                 return chunk
             content = f"{prompt}\n{chunk}"
             messages = [{"role": "user", "content": content}]
-            translated, trans_success = await self.rate_limited_do_gpt_translate(
-                self.PROMPT_SYSTEM,
-                messages)
+            translated, trans_success = await self.rate_limited_do_gpt_translate(self.PROMPT_SYSTEM, messages)
             if not trans_success:
+                logger.error("Failed to translate chunk")
                 return chunk
             translated = re.sub(rf"^{re.escape(prompt)}\n", "", translated, flags=re.MULTILINE)
+            logger.info(f"Translated chunk:\n {translated}")
             return translated
 
         tasks = [translate_chunk(chunk) for chunk in chunks]

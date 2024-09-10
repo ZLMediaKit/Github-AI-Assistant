@@ -29,8 +29,6 @@ class WebhookService(BaseApplication):
     def __init__(self, app_name, pid_file_path=None, log_file_path=None, config=None):
         super().__init__(app_name, pid_file_path, log_file_path, config)
         self.log_config = LOGGING_CONFIG_DEFAULTS
-        self.log_config["handlers"]["file"]["filename"] = f"logs/{app_name.lower()}_server.log"
-        self.log_config["handlers"]["access_file"]["filename"] = f"logs/{app_name.lower()}_access.log"
 
     def init(self):
         self.sanic_app = Sanic(self.app_name, strict_slashes=True, log_config=self.log_config)

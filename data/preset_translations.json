@@ -12,5 +12,8 @@
     "* **操作系统及版本**:": "* **Operating system and version**:",
     "* **硬件信息**:": "* **Hardware information**:",
     "#崩溃信息backtrace粘贴至此": "#Paste the crash information backtrace here",
-    "* **其他需要补充的信息**:": "* **Other information to be supplemented**:"
+    "* **其他需要补充的信息**:": "* **Other information to be supplemented**:",
+    "## 描述该功能的用处，可以提供相关资料描述该功能": "## Describe the purpose of this feature, and provide relevant information to describe this feature",
+    "## 该功能是否用于改进项目缺陷，如果是，请描述现有缺陷": "## Is this feature used to improve project defects? If so, please describe the existing defects",
+    "## 描述你期望实现该功能的方式和最终效果": "## Describe how you expect to achieve this feature and the final effect"
 }

@@ -29,7 +29,7 @@ class BaseApplication(object):
             self.pid_file_path = pid_file_path
         else:
             self.pid_file_path = os.path.join(DEFAULT_PID_FILE_PATH, f"{file_name}.pid")
-        init_logging(file_name, logger_path=log_file_path, logger_level=settings.LOGGER_LEVEL)
+        init_logging(app_name, logger_path=log_file_path, logger_level=settings.LOGGER_LEVEL)
         self.config = config
 
         if os.getppid() == 1:

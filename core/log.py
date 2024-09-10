@@ -49,7 +49,14 @@ LOGGING_CONFIG_DEFAULTS: Dict[str, Any] = dict(  # no cov
     version=1,
     disable_existing_loggers=False,
     loggers={
-        "sanic.root": {"level": "INFO", "handlers": ["console", "file"]},
+        "default": {
+            "level": "INFO",
+            "handlers": ["rich_console", "file"],
+            "propagate": False,
+        },
+        "sanic.root": {
+            "level": "INFO",
+            "handlers": ["console", "file"]},
         "sanic.error": {
             "level": "INFO",
             "handlers": ["error_console", "file"],
@@ -85,6 +92,15 @@ LOGGING_CONFIG_DEFAULTS: Dict[str, Any] = dict(  # no cov
             "formatter": "access",
             "stream": sys.stdout,
         },
+        "rich_console": {
+            "class": "rich.logging.RichHandler",
+            "formatter": "rich_formatter",
+            "console": Console(),
+            "rich_tracebacks": True,
+            "markup": True,
+            "locals_max_length": 0,
+            "locals_max_string": 0,
+        },
         "access_file": {
             "class": "logging.handlers.TimedRotatingFileHandler",
             "formatter": "no_color_access",
@@ -109,6 +125,10 @@ LOGGING_CONFIG_DEFAULTS: Dict[str, Any] = dict(  # no cov
             "format": "%(asctime)s [%(process)s] [%(levelname)s] %(message)s",
             "datefmt": "[%Y-%m-%d %H:%M:%S %z]",
             "class": "logging.Formatter",
+        },
+        "rich_formatter": {
+            "format": "%(message)s",
+            "datefmt": "[%Y-%m-%d %H:%M:%S %z]",
         },
         "access": {
             "format": "%(asctime)s - (%(name)s)[%(levelname)s][%(host)s]: "
@@ -151,26 +171,20 @@ def init_logging(app_name: str, logger_path: str = None, logger_level: int = log
     :param logger_level:
     :param logger_path:
     """
-    logger.handlers = []
-    logger.setLevel(logger_level)
+    # Set the level for all loggers
+    for define_logger in LOGGING_CONFIG_DEFAULTS["loggers"].values():
+        define_logger["level"] = logger_level
     if not logger_path:
         logger_path = os.path.join(PROJECT_BASE_PATH, 'logs')
     if not os.path.exists(logger_path):
         os.makedirs(logger_path)
 
-    log_file = os.path.join(logger_path, f'{app_name}.log')
-    print(f"The log file is: {log_file}")
-    fh = TimedRotatingFileHandler(log_file, when="D", interval=1, backupCount=3)
-    fh.setLevel(logger_level)
-
-    ch = RichHandler(console=Console(), rich_tracebacks=True, markup=True, locals_max_length=0,
-                     locals_max_string=0)
-    ch.setLevel(logger_level)
-
-    formatter = NoEscapeSeqFormatter("%(asctime)s [%(process)s] [%(levelname)s] %(message)s",
-                                     datefmt="[%Y-%m-%d %H:%M:%S %z]")
-    fh.setFormatter(formatter)
-    ch.setFormatter(logging.Formatter("%(message)s",
-                                      datefmt="[%Y-%m-%d %H:%M:%S %z]"))
-    logger.addHandler(fh)
-    logger.addHandler(ch)
+    log_file_prefix = app_name.lower().strip().replace(" ", "_")
+    log_file_path = os.path.join(logger_path, f'{log_file_prefix}.log')
+    log_access_file_path = os.path.join(logger_path, f'{log_file_prefix}_access.log')
+    LOGGING_CONFIG_DEFAULTS["handlers"]["file"]["filename"] = log_file_path
+    LOGGING_CONFIG_DEFAULTS["handlers"]["access_file"]["filename"] = log_access_file_path
+    print(f"The log file is: {log_file_path}")
+    print(f"The access log file is: {log_access_file_path}")
+    logging.config.dictConfig(LOGGING_CONFIG_DEFAULTS)
+    logger.setLevel(logger_level)
