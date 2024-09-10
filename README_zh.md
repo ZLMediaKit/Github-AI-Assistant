@@ -12,10 +12,13 @@
 - [x] 自动翻译指定的 discussions为英文
 - [x] 自动翻译指定的 pull requests为英文
 - [x] 可批量翻译某个仓库的所有 issues/discussions/pull requests为英文
-- [x] 可选择使用GPT4或者GEMINI-PRO模型进行翻译
+- [x] 可选择使用GPT4或者GEMINI-PRO/GEMINI-FLASH模型进行翻译(也可以使用任何兼容openAI接口的模型)
 - [x] 翻译为英文后同时保留原文
 - [x] 翻译为英文后自动添加标记，防止重复翻译
 - [x] 内建webhook服务器, 可以通过webhook自动翻译issues/discussions/pull requests为英文
+- [x] 支持预翻译, 可以通过修改data目录中的json文件进行预翻译
+- [x] 使用异步协程进行翻译, 提高翻译效率
+- [x] 提供两种翻译后端, 可以选择使用切分语句翻译或者直接翻译, 也可以自己扩展翻译后端
 
 ## 部署
 
@@ -27,7 +30,22 @@ cd translation_issues
 chmod +x ./run.sh
 sudo ./run.sh
 ```
-启用webhook服务器并开机自动启动
+
+其他系统下部署:
+
+```bash
+git clone https://github.com/ZLMediaKit/translation_issues.git
+cd translation_issues
+# 安装python3.11或以上版本
+# 创建虚拟环境
+python3 -m venv venv
+# 激活虚拟环境
+source venv/bin/activate
+# 安装依赖
+pip install -r requirements.txt
+```
+
+启用webhook服务器并开机自动启动(ubuntu环境下):
 
 ```bash
 sudo ./run.sh auto_start
@@ -96,7 +114,7 @@ sudo ./run.sh auto_start
 启动GitHub webhooks服务器:
 
 ```bash
-./run.sh start_server
+./run.sh webhook start
 ```
 
 启用webhook服务器后, 您需要在GitHub中配置webhook, 请参考[这里](https://docs.github.com/en/developers/webhooks-and-events/webhooks/creating-webhooks)进行配置.

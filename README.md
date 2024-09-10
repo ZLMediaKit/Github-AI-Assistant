@@ -12,10 +12,14 @@ This project references and utilizes some code from the [ossrs/discussion-transl
 - [x] Automatically translate specified discussions into English
 - [x] Automatically translate specified pull requests into English
 - [x] Batch translate all issues/discussions/pull requests of a repository into English
-- [x] Option to use GPT4 or GEMINI-PRO model for translation
+- [x] Option to use GPT4 or GEMINI-PRO/GEMINI-FLASH models for translation (or any model compatible with the openAI interface)
 - [x] Preserve original text after translation to English
 - [x] Automatically add tags to translated content to prevent duplicate translations
 - [x] Built-in webhook server for automatic translation of issues/discussions/pull requests into English
+- [x] Support pre-translation by modifying json files in the data directory
+- [x] Use asynchronous coroutines for translation to improve efficiency
+- [x] Provide two translation backends: sentence splitting translation or direct translation, and support custom translation backends
+- 
 
 ## Deployment
 
@@ -27,6 +31,22 @@ cd translation_issues
 chmod +x ./run.sh
 sudo ./run.sh
 ```
+
+Deploy on other systems:
+
+```bash
+
+git clone https://github.com/ZLMediaKit/translation_issues.git
+cd translation_issues
+# Install python3.11 or later
+# Create a virtual environment
+python3 -m venv venv
+# Activate the virtual environment
+source venv/bin/activate
+# Install dependencies
+pip install -r requirements.txt
+```
+
 Enable webhook server and auto-start on boot:
 
 ```bash
@@ -95,7 +115,7 @@ Batch translate all issues/discussions/pull requests of a specific repository:
 Start the GitHub webhook server:
 
 ```bash
-./run.sh start_server
+./run.sh webhook start
 ```
 
 After enabling the webhook server, you need to configure a webhook in GitHub. Please refer to [this guide](https://docs.github.com/en/developers/webhooks-and-events/webhooks/creating-webhooks) for configuration.

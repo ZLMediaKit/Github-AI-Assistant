@@ -1,4 +1,10 @@
 #!/bin/bash
+if ! grep -qi "ubuntu" /etc/os-release; then
+    echo "The current OS is not Ubuntu. Please activate the virtual environment first."
+    python main.py "$@"
+    exit 0
+fi
+
 
 if ! [ -x "$(command -v python3.11)" ]; then
     echo "Python 3.11 is not installed. Installing Python 3.11..."
