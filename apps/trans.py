@@ -19,6 +19,7 @@ async def update_issue_comment(comment: Comment, translated_body: str, original_
         if e.is_forbidden():
             logger.error(f"Warning!!! Ignore update comment {comment.id} failed, forbidden, {e.errors}")
         else:
+            logger.exception(f"update_issue_comment failed, {e}")
             raise e
 
 
@@ -62,6 +63,7 @@ async def update_detail(detail_type: str, detail_id: str, translated_title: str,
         if e.is_forbidden():
             logger.warning(f"Warning!!! Ignore update [{detail_type}] {detail_id} failed, forbidden, {e.errors}")
         else:
+            logger.exception(f"update_detail failed, {e}")
             raise e
 
 
@@ -193,6 +195,7 @@ async def trans_discussion_comments(comments: List[Comment]) -> bool:
                     if e.is_forbidden():
                         logger.error(f"Warning!!! Ignore update comment {c_id} failed, forbidden, {e.errors}")
                     else:
+                        logger.exception(f"update_discussion_comment failed, {e}")
                         raise e
         for position, reply_obj in enumerate(detail["replies"]["nodes"]):
             reply_id = reply_obj["id"]
@@ -270,6 +273,7 @@ async def trans_pr_comments(comments, reviews):
                     if e.is_forbidden():
                         logger.error(f"Warning!!! Ignore update comment {c_id} failed, forbidden, {e.errors}")
                     else:
+                        logger.exception(f"update_issue_comment failed, {e}")
                         raise e
         for position, review_obj in enumerate(reviews):
             c_id = review_obj["id"]
