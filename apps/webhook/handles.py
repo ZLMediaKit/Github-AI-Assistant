@@ -1,4 +1,12 @@
 # -*- coding:utf-8 -*-
+
+#  Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
+#  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/translation_issues).
+#  Use of this source code is governed by MIT-like license that can be found in the
+#  LICENSE file in the root of the source tree. All contributing project authors
+#  may be found in the AUTHORS file in the root of the source tree.
+#
+
 from sanic.log import logger
 
 from apps import trans
@@ -161,25 +169,44 @@ async def commit_comment_handler(action: str, data, event, delivery, headers):
     else:
         html_url = data['comment']['html_url']
         api_request_url = data['comment']['url']
-        node_id = data['comment']['node_id']
+        comment_id = data['comment']['id']
         body = data['comment']['body']
-        logger.info(f"Thread: {delivery}: commit comments received {html_url} of {api_request_url} {node_id}"
+        logger.info(f"Thread: {delivery}: commit comments received {html_url} of {api_request_url}"
                     f" {body}")
         translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
         translated_body, has_translated_by_gpt, real_translated = await translator.translate(body)
         if real_translated:
             logger.info(f"Thread: {delivery}: Body:\n{translated_body}\n")
             try:
-                await github.update_commit_comment(node_id, translate.wrap_magic(translated_body, original_body=body))
+                repo_detail = github.parse_commit_comment_url(api_request_url)
+                await github.update_commit_comment(repo_detail, comment_id,
+                                                   translate.wrap_magic(translated_body, original_body=body))
                 logger.info(f"Thread: {delivery}: Updated ok")
-            except GithubGraphQLException as e:
-                if e.is_forbidden():
-                    logger.error(
-                        f"Thread: {delivery}: Warning!!! Ignore update PR Review comment {node_id} failed, forbidden, {e.errors}")
-                else:
-                    logger.exception(
-                        f"Thread: {delivery}: Error!!! Update PR Review comment {node_id} failed, {e.errors}")
-                    raise e
+            except Exception as e:
+                logger.exception(
+                    f"Thread: {delivery}: Error!!! Update Commit comment {html_url} failed, {e}")
+                raise e
+
+
+def commit_handler(data, event, delivery, headers):
+    commit_id = data['head_commit']['id']
+    body = data['head_commit']['message']
+    # "https://github.com/ZLMediaKit/translation_issues/commit/8547b7710226e80589e46570c546d8803b345647"
+    url = data['head_commit']['url']
+    logger.info(f"Thread: {delivery}: Got a commit {commit_id}\n {url}\n {body}")
+    translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+    translated_body, has_translated_by_gpt, real_translated = await translator.translate(body)
+    if real_translated:
+        logger.info(f"Thread: {delivery}: Body:\n{translated_body}\n")
+        try:
+            repo_detail = github.parse_commit_url(url)
+            await github.create_commit_comment(repo_detail, commit_id, translate.wrap_magic(translated_body))
+            logger.info(f"Thread: {delivery}: Create Commit comment ok")
+        except Exception as e:
+            logger.exception(f"Thread: {delivery}: Error!!! Create Commit comment {url} failed, {e}")
+            raise e
+    else:
+        logger.info(f"Thread: {delivery}: No need to translate")
 
 
 async def handle_github_request(data, event, delivery, headers):
@@ -205,8 +232,10 @@ async def handle_github_request(data, event, delivery, headers):
         await pull_request_review_handler(action, data, event, delivery, headers)
     elif event == 'pull_request_review_comment':
         await pull_request_review_comment_handler(action, data, event, delivery, headers)
-    # elif event == "commit_comment":
-    #     await commit_comment_handler(action, data, event, delivery, headers)
+    elif event == "commit_comment":
+        await commit_comment_handler(action, data, event, delivery, headers)
+    elif event == "push":
+        await commit_handler(data, event, delivery, headers)
     else:
         logger.info(f"Thread: {delivery}: Ignore event {event}")
 

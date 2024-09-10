@@ -1,4 +1,10 @@
 # -*- coding:utf-8 -*-
+#  Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
+#  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/translation_issues).
+#  Use of this source code is governed by MIT-like license that can be found in the
+#  LICENSE file in the root of the source tree. All contributing project authors
+#  may be found in the AUTHORS file in the root of the source tree.
+#
 __author__ = 'alex'
 
 import hashlib
@@ -36,6 +42,15 @@ def get_graphql_headers() -> dict:
     }
 
 
+def get_rest_headers() -> dict:
+    return {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {settings.get_github_token()}",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "ZLMediaKit",
+    }
+
+
 def parse_repository_url(url: str) -> RepoDetail:
     """
     :param url: GitHub repository URL, for example, https://github.com/your-org/your-repository
@@ -69,6 +84,26 @@ def parse_pullrequest_url(url: str) -> RepoDetail:
     return parse_issue_url(url)
 
 
+def parse_commit_url(url: str) -> RepoDetail:
+    """
+    :param url: GitHub PullRequest URL, for example, https://github.com/ZLMediaKit/translation_issues/commit/8547b7710226e80589e46570c546d8803b345647
+    """
+    parsed_url = urlparse(url)
+    url_path_list = parsed_url.path.strip('/').split('/')
+    return RepoDetail(url=url, owner=url_path_list[0], name=url_path_list[1])
+
+
+def parse_commit_comment_url(url: str) -> RepoDetail:
+    """
+    :param url: GitHub commit comment URL, for example,https://api.github.com/repos/ZLMediaKit/translation_issues/comments/146478510
+    :param url:
+    :return:
+    """
+    parsed_url = urlparse(url)
+    url_path_list = parsed_url.path.strip('/').split('/')
+    return RepoDetail(url=url, owner=url_path_list[1], name=url_path_list[2], number=int(url_path_list[4]))
+
+
 async def do_post_requests(json_data):
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post('https://api.github.com/graphql',
@@ -79,6 +114,28 @@ async def do_post_requests(json_data):
         result = response.json()
         if 'errors' in result:
             raise GithubGraphQLException(f"request failed, {result}", response)
+        return result
+
+
+async def do_rest_path_requests(path, json_data):
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.patch(f'https://api.github.com{path}',
+                                      json=json_data,
+                                      headers=get_rest_headers())
+        if response.status_code != 200:
+            raise Exception(f"request failed, code={response.status_code}, text={response.text}")
+        result = response.json()
+        return result
+
+
+async def do_rest_post_requests(path, json_data):
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(f'https://api.github.com{path}',
+                                     json=json_data,
+                                     headers=get_rest_headers())
+        if response.status_code != 201:
+            raise Exception(f"request failed, code={response.status_code}, text={response.text}")
+        result = response.json()
         return result
 
 
@@ -128,7 +185,7 @@ async def query_issue(repo_model: RepoDetail) -> IssueDetail:
         if 'author' not in c or c['author'] is None:
             c['author'] = {'login': 'ghost'}
 
-    result_data =  {
+    result_data = {
         'id': result['data']['repository']['issue']['id'],
         'title': result['data']['repository']['issue']['title'],
         'body': result['data']['repository']['issue']['body'],
@@ -212,7 +269,7 @@ async def query_discussion(repo_model: RepoDetail) -> DiscussionDetail:
             if r['author'] is None:
                 r['author'] = {'login': 'ghost'}
 
-    result_data =  {
+    result_data = {
         'id': result['data']['repository']['discussion']['id'],
         'title': result['data']['repository']['discussion']['title'],
         'body': result['data']['repository']['discussion']['body'],
@@ -338,7 +395,7 @@ async def query_label_id(owner, name, label):
     try:
         label_id = result['data']['repository']['label']['id']
         return label_id
-    except Exception as e:
+    except Exception:
         return None
 
 
@@ -460,26 +517,31 @@ async def update_pullrequest_review_comment(pr_id, body):
     return result['data']['updatePullRequestReviewComment']['pullRequestReviewComment']['id']
 
 
-async def update_commit_comment(node_id, body):
-    query = '''
-        mutation ($id: ID!, $body: String!) {
-          updateCommitComment(
-            input: {commitCommentId: $id, body: $body}
-          ) {
-            commitComment {
-              id
-            }
-          }
-        }
-    '''
-    variables = {
-        "id": node_id,
+async def update_commit_comment(repo_detail: RepoDetail, comment_id, body):
+    path = "/repos/{owner}/{repo}/comments/{comment_id}"
+    data = {
         'body': body,
     }
-    result = await do_post_requests({
-        "query": query, "variables": variables
-    })
-    return result['data']['updateCommitComment']['commitComment']['id']
+
+    result = await do_rest_path_requests(path.format(owner=repo_detail.owner,
+                                                     repo=repo_detail.name,
+                                                     comment_id=comment_id), data)
+    return result['body'] == body
+
+
+async def create_commit_comment(repo_detail: RepoDetail, commit_id, body):
+    """
+    /repos/{owner}/{repo}/commits/{commit_sha}/comments
+    :param repo_detail:
+    :param commit_id:
+    :param body:
+    :return:
+    """
+    path = f"/repos/{repo_detail.owner}/{repo_detail.name}/commits/{commit_id}/comments"
+    data = {
+        'body': body,
+    }
+    result = await do_rest_post_requests(path, data)
 
 
 async def update_pullrequest(pr_id, title, body, original_title=None):
