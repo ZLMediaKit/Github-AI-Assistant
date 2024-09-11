@@ -53,6 +53,7 @@ pip list > /tmp/pip_list_output
 if ! grep -q 'typer' /tmp/pip_list_output; then
     echo "Installing typer..."
     pip install "typer[all]==0.9.0"
+    pip install "tenacity==9.0.0"
 fi
 rm /tmp/pip_list_output
 
