@@ -155,54 +155,55 @@ def is_significant_change(diff: str) -> bool:
     return significant_changes >= 5 and (significant_changes / total_changes) > 0.2
 
 
+async def review_file(file_detail: dict, repo_name: str, commit_message: str, commit_sha: str,
+                      client: httpx.AsyncClient) -> str | None:
+    filename = file_detail['filename']
+    file_patch = file_detail.get('patch', None)
+    file_status = file_detail['status']
+    file_extension = os.path.splitext(filename)[1]
+    if file_extension not in REVIEWS_FILES_EXTENSIONS:
+        return None
+    if file_status not in ['added', 'modified']:
+        return None
+    if file_patch:
+        if not is_significant_change(file_patch):
+            logger.info("Skip review for file %s", filename)
+            return None
+    logger.info(f"Review file {filename}")
+    file_content = await github.get_file_content(repo_name, filename, commit_sha, client)
+    review_result = await do_ai_review(filename, commit_message, file_status, file_content, file_patch)
+    return translate.wrap_magic(review_result)
+
+
 async def review_commit(repo_name, commit_sha):
     logger.info(f"Review commit {commit_sha} in {repo_name}")
     async with httpx.AsyncClient() as client:
         commit_data = await github.get_commit(repo_name, commit_sha, client)
         logger.info(f"Get commit data: {commit_data}")
+        commit_message = commit_data['commit']['message']
         for file in commit_data['files']:
-            filename = file['filename']
-            file_patch = file.get('patch', None)
-            file_extension = os.path.splitext(filename)[1]
-            if file_extension not in REVIEWS_FILES_EXTENSIONS:
+            review_result = await review_file(file, repo_name, commit_message, commit_sha, client)
+            if not review_result:
                 continue
-            if file_patch:
-                if not is_significant_change(file_patch):
-                    logger.info("Skip review for file %s", filename)
-                    continue
-            logger.info(f"Review file {filename}")
-            file_content = await github.get_file_content(repo_name, filename, commit_sha, client)
-            review_result = await do_ai_review(file_content, file_patch)
-            review_result = translate.wrap_magic(review_result)
             # 提交评论
-            body = f"AI Review for {filename}:\n\n{review_result}"
+            body = f"AI Review for {file['filename']}:\n\n{review_result}"
             await github.create_commit_comment(repo_name, commit_sha, body, client)
 
 
-async def review_pull_request(repo_name, pr_number, head_sha):
+async def review_pull_request(repo_name, pr_number, commit_sha, commit_message):
     logger.info(f"Review pull request {pr_number} in {repo_name}")
     async with httpx.AsyncClient() as client:
         # 获取PR文件
         files = await github.get_pr_files(repo_name, pr_number, client)
         logger.info(f"Get PR files: {files}")
         for file in files:
-            filename = file['filename']
-            file_patch = file.get('patch', None)
-            file_extension = os.path.splitext(filename)[1]
-            if file_extension not in REVIEWS_FILES_EXTENSIONS:
+            review_result = await review_file(file, repo_name, commit_message, commit_sha, client)
+            if not review_result:
                 continue
-            if file_patch:
-                if not is_significant_change(file_patch):
-                    logger.info("Skip review for file %s", filename)
-                    continue
-            logger.info(f"Review file {filename}")
-            file_content = await github.get_file_content(repo_name, filename, head_sha, client)
-            review_result = await do_ai_review(file_content, file_patch)
-            review_result = translate.wrap_magic(review_result)
             # 提交评论
             comment_data = {
-                "body": f"AI Review for {filename}:\n\n{review_result}",
-                "commit_id": head_sha,
+                "body": f"AI Review for {file['filename']}:\n\n{review_result}",
+                "commit_id": commit_sha,
                 "path": file['filename'],
                 "subject_type": "file"
             }
@@ -223,5 +224,6 @@ async def review_specific_pr(pr_url: str):
     repo_detail = github.parse_pullrequest_url(pr_url)
     pr_data = await github.get_pullrequest(repo_detail.get_repo_fullname(), repo_detail.number)
     head_sha = pr_data['head']['sha']
-    await review_pull_request(repo_detail.get_repo_fullname(), repo_detail.number, head_sha)
+    commit_message = pr_data['title']
+    await review_pull_request(repo_detail.get_repo_fullname(), repo_detail.number, head_sha, commit_message)
 

@@ -17,58 +17,92 @@ from core.log import logger
 from core.models import ModelSettings
 
 REVIEW_PROMPT_FULL = """
-You are an expert code reviewer. Your task is to review the provided code and offer constructive, detailed feedback. Follow these guidelines:
-1. **Determine review type:**
-   - For new file submissions, review the entire code file.
-   - For change commits, focus on the modifications in the patch while referencing the whole file for context.
-   
-2. **Code Quality:**
-   - Assess overall code structure and organization.
-   - Check for code readability and maintainability.
+You are an expert code reviewer. Your task is to review the provided code and offer constructive, detailed feedback. The review process differs based on whether the submission is a patch to an existing file or a new file.
 
-3. **Functionality:**
-   - Analyze the code's logic and algorithmic efficiency.
-   - Identify potential bugs or edge cases.
+## Determining Review Type
+
+1. **Patch to Existing File:**
+   - If a patch is provided (marked with `[PATCH_START]` and `[PATCH_END]` tags), focus primarily on reviewing the changes in the patch.
+   - The full file content will be provided after the patch for context.
+
+2. **New File Submission:**
+   - If no patch is provided (i.e., no content between `[PATCH_START]` and `[PATCH_END]` tags), this indicates a new file submission.
+   - In this case, review the entire code file comprehensively.
+
+## Review Process
+
+### For Patch Reviews:
+
+1. **Patch Focus:**
+   - Concentrate on the code within the `[PATCH_START]` and `[PATCH_END]` tags.
+   - Use the full file content for context and to understand the impact of changes.
+
+2. **Change Analysis:**
+   - Evaluate how the patch affects the overall functionality of the file.
+   - Consider potential side effects of the changes.
+
+3. **Consistency with Existing Code:**
+   - Ensure the patch follows the naming conventions and coding style of the existing code.
+
+### For New File Reviews:
+
+1. **Comprehensive Analysis:**
+   - Review the entire code file thoroughly.
+   - Assess overall structure, organization, and design choices.
+
+2. **File Purpose:**
+   - Evaluate if the new file serves its intended purpose effectively.
+   - Consider how it fits into the broader project structure.
+
+### Common Review Points (for both types):
+
+3. **Code Quality:**
+   - Assess code structure, readability, and maintainability.
+
+4. **Functionality:**
+   - Analyze logic, algorithmic efficiency, and potential edge cases.
    - Suggest optimizations where applicable.
 
-4. **Security:**
-   - Spot any security vulnerabilities.
-   - Recommend best practices for secure coding.
+5. **Security:**
+   - Identify any security vulnerabilities.
+   - Recommend secure coding practices.
 
-5. **Performance:**
-   - Identify performance bottlenecks.
-   - Suggest ways to improve execution speed or resource usage.
+6. **Performance:**
+   - Spot performance bottlenecks.
+   - Suggest improvements for execution speed or resource usage.
 
-6. **Documentation:**
+7. **Documentation:**
    - Evaluate the quality and completeness of comments and docstrings.
    - Suggest improvements for clearer documentation.
 
-7. **Testing:**
+8. **Testing:**
    - Assess the presence and quality of unit tests.
    - Recommend additional test scenarios if needed.
 
-8. **Best Practices:**
+9. **Best Practices:**
    - Suggest use of appropriate idioms and patterns.
-   - Recommend modern features when relevant.
+   - Recommend modern language features when relevant.
 
-9. **Dependencies:**
-   - Review the use of external libraries and suggest alternatives if appropriate.
+10. **Dependencies:**
+    - Review the use of external libraries and suggest alternatives if appropriate.
 
-10. **Scalability:**
-   - Consider how well the code would scale with increased data or users.
+11. **Scalability:**
+    - Consider how well the code would scale with increased data or users.
 
-11. **Consistency:**
-    - Ensure naming conventions and coding style are consistent throughout.
+## Review Format
 
 Provide your feedback using the following GitHub-flavored Markdown format:
 
 ```markdown
-# Code Review: [Brief description of the reviewed code]
+# Code Review: [Brief description of the reviewed code (patch or new file)]
 
 ## Summary
-[A brief overview of your findings]
+[A brief overview of your findings, indicating whether this is a patch review or a new file review]
 
 ## Detailed Feedback
+
+### Code Overview
+[Brief description of what the patch does or what the new file contains]
 
 ### Strengths
 - [List of positive aspects]
@@ -93,14 +127,15 @@ This review was conducted by an AI assistant. While efforts have been made to en
 ```
 
 Ensure your feedback is:
+- Focused on the patch for existing files, or comprehensive for new files
 - Constructive and respectful
 - Specific, with code examples where helpful
 - Prioritized, focusing on the most impactful improvements first
 - Balanced, acknowledging both strengths and areas for improvement
 
 Your goal is to help improve the code quality, security, and efficiency while providing a learning opportunity for the developer.
-IMPORTANT: Your response must not exceed {max_tokens} tokens. If you need more space, end your response with "[
-CONTINUED]" and wait for a prompt to continue.
+
+IMPORTANT: Your response must not exceed {max_tokens} tokens. If you need more space, end your response with "[CONTINUED]" and wait for a prompt to continue.
 """
 
 REVIEW_PROMPT_SIMPLE = """
@@ -155,19 +190,29 @@ CONTINUED]" and wait for a prompt to continue.
 """
 
 USER_PROMPT = """
-Please review the following code submission.
+## File Information
+- **File Name:** {filename}
+- **Review Type:** {review_type}
 
-## Full Code
+## Patch (if applicable)
+[PATCH_START]
+```diff
+{patch_code}
+```
+[PATCH_END]
 
+## Full File Content
 ```
 {full_code}
 ```
 
-## Patch Code
+## Purpose of Changes (optional)
 
-```
-{patch_code}
-```
+{commit_message}
+
+---
+
+Please review the above code according to the provided guidelines. Focus on [specific areas if any] and provide detailed feedback on code quality, functionality, security, and best practices.
 """
 
 
@@ -289,8 +334,25 @@ async def do_ai_translate(system_prompt: str, messages):
     return translated
 
 
-async def do_ai_review(code_content: str, file_patch: str):
-    messages = [{"role": "user", "content": USER_PROMPT.format(full_code=code_content, patch_code=file_patch)}]
+async def do_ai_review(filename: str, commit_message: str, file_status: str, code_content: str, file_patch: str):
+    if file_status == "added":
+        review_type = "New File"
+        file_patch = ""
+    else:
+        if file_patch:
+            review_type = "Patch"
+        else:
+            review_type = "New File"
+    if file_patch is None:
+        file_patch = ""
+    if code_content is None:
+        code_content = ""
+    messages = [{"role": "user", "content": USER_PROMPT.format(
+        full_code=code_content,
+        filename=filename,
+        review_type=review_type,
+        commit_message=commit_message,
+        patch_code=file_patch)}]
     system_prompt = REVIEW_PROMPT_FULL.format(max_tokens=settings.REVIEW_MODEL.max_output_tokens)
 
     full_response = ""

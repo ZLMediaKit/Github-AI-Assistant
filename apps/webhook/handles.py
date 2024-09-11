@@ -102,24 +102,22 @@ async def discussion_comment_handler(action: str, data, event, delivery, headers
 
 
 async def pull_request_handler(action: str, payload, event, delivery, headers):
-    if action != 'opened':
+    if action not in ["opened", "synchronize"]:
         logger.info(f"Thread: {delivery}: Ignore action {action}")
+        return
     else:
         html_url = payload['pull_request']['html_url']
         number = payload['pull_request']['number']
         title = payload['pull_request']['title']
         logger.info(f"Thread: {delivery}: Got a pull request #{number} {html_url} {title}")
         result = await trans.trans_pr(html_url)
-    if action not in ["opened", "synchronize"]:
-        return
-
     repo_name = payload["repository"]["full_name"]
     pr_number = payload["number"]
     head_sha = payload["pull_request"]["head"]["sha"]
     if not settings.REVIEW_MODEL.api_key:
         logger.info(f"Thread: {delivery}: No review model, skip")
         return
-    await review.review_pull_request(repo_name, pr_number, head_sha)
+    await review.review_pull_request(repo_name, pr_number, head_sha, title)
 
 
 async def pull_request_review_handler(action: str, data, event, delivery, headers):
