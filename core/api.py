@@ -6,10 +6,14 @@
 #  may be found in the AUTHORS file in the root of the source tree.
 #
 #
+import logging
+
 import httpx
+import tenacity
 from openai import AsyncClient
 
 from core import settings
+from core.log import logger
 from core.models import ModelSettings
 
 REVIEW_PROMPT_FULL = """
@@ -167,6 +171,12 @@ Please review the following code submission.
 """
 
 
+@tenacity.retry(
+    retry=tenacity.retry_if_exception_type(Exception),
+    wait=tenacity.wait_exponential(multiplier=1, min=2, max=5),
+    stop=tenacity.stop_after_attempt(3),
+    before_sleep=tenacity.before_sleep_log(logger, logging.INFO)
+)
 async def call_gemini_api(prompt: str, messages, model: ModelSettings):
     """
     call google gemini api
@@ -221,7 +231,7 @@ async def call_gemini_api(prompt: str, messages, model: ModelSettings):
         "Content-Type": "application/json",
     }
     async with httpx.AsyncClient(proxy=settings.get_proxy_url()) as client:
-        response = await client.post(url, headers=headers, json=data , timeout=30)
+        response = await client.post(url, headers=headers, json=data, timeout=30)
         if response.status_code != 200:
             raise Exception(f"gemini request failed, code={response.status_code}, text={response.text}")
         result_json = response.json()
