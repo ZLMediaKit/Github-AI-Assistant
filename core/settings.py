@@ -163,7 +163,7 @@ def setup_translation_env(github_token: str, model_name: str, api_key: str, api_
     if not env.get_env(constants.ENV_TRANSLATION_API_KEY):
         console.print(f"Warning: {constants.ENV_TRANSLATION_API_KEY} is not set", style="bold red")
         return False
-    init_translation_model()
+    init_translation_model(True)
     return True
 
 
@@ -179,7 +179,7 @@ def setup_review_env(github_token: str, model_name: str, api_key: str, api_url=N
     if not env.get_env(constants.ENV_REVIEW_API_KEY):
         console.print(f"Warning: {constants.ENV_REVIEW_API_KEY} is not set", style="bold red")
         return False
-    init_translation_model()
+    init_review_model(True)
     return True
 
 

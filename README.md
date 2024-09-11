@@ -9,19 +9,19 @@ The best AI assistant for your Github repository, it can not only help you autom
 ## Acknowledgements
 This project references and utilizes some code from the [ossrs/discussion-translation](https://github.com/ossrs/issues-translation) project. Special thanks to the original author for their work.
 
+Here's the English translation of the content, maintaining the original format:
+
 ## Features
-- [x] Automatically translate specified issues into English
-- [x] Automatically translate specified discussions into English
-- [x] Automatically translate specified pull requests into English
-- [x] Batch translate all issues/discussions/pull requests of a repository into English
-- [x] Option to use GPT4 or GEMINI-PRO/GEMINI-FLASH models for translation (or any model compatible with the openAI interface)
-- [x] Preserve original text after translation to English
-- [x] Automatically add tags to translated content to prevent duplicate translations
-- [x] Built-in webhook server for automatic translation of issues/discussions/pull requests into English
-- [x] Support pre-translation by modifying json files in the data directory
-- [x] Use asynchronous coroutines for translation to improve efficiency
-- [x] Provide two translation backends: sentence splitting translation or direct translation, and support custom translation backends
-- 
+- [x] Automatically translate specified issues/discussions/PRs/commits to English or a designated language
+- [x] Batch translate all issues/discussions/PRs of a repository to English or a designated language
+- [x] Option to use GPT series or GEMINI series models for translation (or any model compatible with OpenAI interface)
+- [x] Retain the original text alongside the English translation
+- [x] Automatically add markers after translation to English to prevent duplicate translations
+- [x] Built-in webhook server for automatic translation of issues/discussions/PRs/commits to English or other languages
+- [x] Support for pre-translation by modifying JSON files in the data directory
+- [x] Use of asynchronous coroutines for translation to improve efficiency
+- [x] Provide two translation backends, with options to use sentence splitting translation or direct translation, and the ability to extend translation backends
+- [x] Support for manual or webhook-triggered automatic code review of submitted PRs or commits, providing suggestions for fixes and optimizations, for example: [here](https://github.com/ZLMediaKit/translation_issues/commit/b338d03ec3fe0d574d709b653e800871dde249ba#commitcomment-146555343)
 
 ## Deployment
 
@@ -84,9 +84,9 @@ Translate a specific issue:
 ./run.sh trans_issues --input-url https://github.com/your-org/your-repository/issues/1
 ```
 
-[Note: If you haven't set environment variables in .env, you need to specify the github-token and gemini-key or openai-key]
+[Note: If you haven't set environment variables in .env, you will need to specify parameters such as github-token, model_name and api_key]
 ```bash
-./run.sh trans_issues --input-url https://github.com/your-org/your-repository/issues/1 --github-token ghp_xxx --gemini-key xxxx
+./run.sh trans_issues --input-url https://github.com/your-org/your-repository/issues/1 --github-token ghp_xxx --model_name gemini/gemini-1.5-flash --api_key xxxx
 ```
 
 Translate a specific discussion:
@@ -113,6 +113,17 @@ Batch translate all issues/discussions/pull requests of a specific repository:
 ./run.sh batch_trans --input-url https://github.com/your-org/your-repository --query-filter pr --query-limit 10
 
 ```
+
+Use AI to review the specified PR or commit:
+
+```bash
+# Review PR
+./run.sh review_pr --input-url https://github.com/ZLMediaKit/ZLMediaKit/pull/3758
+# Review commit
+./run.sh review_commit --input-url https://github.com/ZLMediaKit/ZLMediaKit/commit/e322db0a044fec82c66cc4e0b0daaa5e3b75b079
+```
+
+## Use webhook
 
 Start the GitHub webhook server:
 

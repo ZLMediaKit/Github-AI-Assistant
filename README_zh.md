@@ -11,17 +11,16 @@
 本项目参考并使用了[ossrs/discussion-translation](https://github.com/ossrs/issues-translation)项目的部分代码,感谢原作者的工作.
 
 ## 特性
-- [x] 自动翻译指定的 issues为英文
-- [x] 自动翻译指定的 discussions为英文
-- [x] 自动翻译指定的 pull requests为英文
-- [x] 可批量翻译某个仓库的所有 issues/discussions/pull requests为英文
-- [x] 可选择使用GPT4或者GEMINI-PRO/GEMINI-FLASH模型进行翻译(也可以使用任何兼容openAI接口的模型)
+- [x] 自动翻译指定的issues/discussions/pr/commit为英文或指定语言
+- [x] 可批量翻译某个仓库的所有issues/discussions/pr为英文或指定语言
+- [x] 可选择使用GPT系列或者GEMINI系列模型进行翻译(也可以使用任何兼容openAI接口的模型)
 - [x] 翻译为英文后同时保留原文
 - [x] 翻译为英文后自动添加标记，防止重复翻译
-- [x] 内建webhook服务器, 可以通过webhook自动翻译issues/discussions/pull requests为英文
+- [x] 内建webhook服务器, 可以通过webhook自动翻译issues/discussions/pr/commit为英文或其他语言
 - [x] 支持预翻译, 可以通过修改data目录中的json文件进行预翻译
 - [x] 使用异步协程进行翻译, 提高翻译效率
 - [x] 提供两种翻译后端, 可以选择使用切分语句翻译或者直接翻译, 也可以自己扩展翻译后端
+- [x] 支持手动或者通过webhook自动对提交的pr或者commit进行代码审查并提供修复优化建议,例如:[这里](https://github.com/ZLMediaKit/translation_issues/commit/b338d03ec3fe0d574d709b653e800871dde249ba#commitcomment-146555343)
 
 ## 部署
 
@@ -84,9 +83,9 @@ sudo ./run.sh auto_start
 ./run.sh trans_issues --input-url https://github.com/your-org/your-repository/issues/1
 ```
 
-[注意: 如果您没有在.env中设置环境变量, 那么您需要指定github-token以及gemini-key或者openai-key]
+[注意: 如果您没有在.env中设置环境变量, 那么您需要指定github-token,model_name和api_key等参数]
 ```bash
-./run.sh trans_issues --input-url https://github.com/your-org/your-repository/issues/1 --github-token ghp_xxx --gemini-key xxxx
+./run.sh trans_issues --input-url https://github.com/your-org/your-repository/issues/1 --github-token ghp_xxx --model_name gemini/gemini-1.5-flash --api_key xxxx
 ```
 
 翻译指定的discussion:
@@ -113,6 +112,17 @@ sudo ./run.sh auto_start
 ./run.sh batch_trans --input-url https://github.com/your-org/your-repository --query-filter pr --query-limit 10
 
 ```
+
+使用AI审查指定的PR或者commit:
+
+```bash
+# 审查PR
+./run.sh review_pr --input-url https://github.com/ZLMediaKit/ZLMediaKit/pull/3758
+# 审查commit
+./run.sh review_commit --input-url https://github.com/ZLMediaKit/ZLMediaKit/commit/e322db0a044fec82c66cc4e0b0daaa5e3b75b079
+```
+
+## 使用webhook
 
 启动GitHub webhooks服务器:
 

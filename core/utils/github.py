@@ -35,6 +35,9 @@ class RepoDetail(BaseModel):
     name: str
     number: Optional[int] = 0
 
+    def get_repo_fullname(self):
+        return f"{self.owner}/{self.name}"
+
 
 def get_graphql_headers() -> dict:
     return {
@@ -90,13 +93,15 @@ def parse_pullrequest_url(url: str) -> RepoDetail:
     return parse_issue_url(url)
 
 
-def parse_commit_url(url: str) -> RepoDetail:
+def parse_commit_url(url: str) -> tuple[str, str]:
     """
     :param url: GitHub PullRequest URL, for example, https://github.com/ZLMediaKit/Github-AI-Assistant/commit/8547b7710226e80589e46570c546d8803b345647
     """
     parsed_url = urlparse(url)
     url_path_list = parsed_url.path.strip('/').split('/')
-    return RepoDetail(url=url, owner=url_path_list[0], name=url_path_list[1])
+    repo_fullname = f"{url_path_list[0]}/{url_path_list[1]}"
+    commit_sha = url_path_list[3]
+    return repo_fullname, commit_sha
 
 
 def parse_commit_comment_url(url: str) -> RepoDetail:
@@ -620,81 +625,9 @@ async def update_pullrequest(pr_id, title, body, original_title=None):
     return result['data']['updatePullRequest']['pullRequest']['id']
 
 
-async def query_pullrequest(owner, name, pr_number):
-    query = '''
-        query ($name: String!, $owner: String!, $number: Int!) {
-          repository(name: $name, owner: $owner) {
-            pullRequest(number: $number) {
-              id
-              title
-              body
-              mergeable
-              author {
-                login
-              }
-              baseRef {
-                name
-                repository {
-                  name
-                  owner {
-                    login
-                  }
-                }
-              }
-              headRef {
-                name
-                repository {
-                  name
-                  owner {
-                    login
-                  }
-                }
-              }
-              participants(first: 100) {
-                totalCount
-                nodes {
-                  login
-                }
-              }
-              labels(first: 100) {
-                totalCount
-                nodes {
-                  id
-                  name
-                }
-              }
-            }
-          }
-        }
-    '''
-
-    result = await do_post_requests({"query": query, "variables": {
-        "name": name, "owner": owner, "number": pr_number
-    }})
-
-    total_labels = result['data']['repository']['pullRequest']['labels']['totalCount']
-    if total_labels > 100:
-        raise Exception(f"too many labels, count={total_labels} {result}")
-
-    total_participants = result['data']['repository']['pullRequest']['participants']['totalCount']
-    if total_participants > 100:
-        raise Exception(f"too many participants, count={total_participants} {result}")
-
-    for c in result['data']['repository']['pullRequest']['participants']['nodes']:
-        if 'author' not in c or c['author'] is None:
-            c['author'] = {'login': 'ghost'}
-
-    return {
-        "id": result['data']['repository']['pullRequest']['id'],
-        "title": result['data']['repository']['pullRequest']['title'],
-        "body": result['data']['repository']['pullRequest']['body'],
-        "mergeable": result['data']['repository']['pullRequest']['mergeable'] == 'MERGEABLE',
-        "author": result['data']['repository']['pullRequest']['author']['login'],
-        "baseRef": result['data']['repository']['pullRequest']['baseRef'],
-        "headRef": result['data']['repository']['pullRequest']['headRef'],
-        "participants": result['data']['repository']['pullRequest']['participants']['nodes'],
-        "labels": result['data']['repository']['pullRequest']["labels"]["nodes"],
-    }
+async def get_pullrequest(repo_name: str, pr_number: int):
+    path = f"/repos/{repo_name}/pulls/{pr_number}"
+    return await do_rest_get_requests(path)
 
 
 async def search_issues(owner, name, isf, sort, labels, count):

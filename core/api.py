@@ -223,7 +223,7 @@ async def call_gemini_api(prompt: str, messages, model: ModelSettings):
     async with httpx.AsyncClient(proxy=settings.get_proxy_url()) as client:
         response = await client.post(url, headers=headers, json=data , timeout=30)
         if response.status_code != 200:
-            raise Exception(f"gemini request failed, code={response.status_code}")
+            raise Exception(f"gemini request failed, code={response.status_code}, text={response.text}")
         result_json = response.json()
         translated = result_json["candidates"][0]['content']["parts"][0]["text"]
         lines = translated.split('\n')

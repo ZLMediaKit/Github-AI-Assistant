@@ -20,6 +20,7 @@ from typing import List, Tuple
 
 import httpx
 
+from core import translate
 from core.api import do_ai_review
 from core.log import logger
 from core.utils import github
@@ -172,6 +173,7 @@ async def review_commit(repo_name, commit_sha):
             logger.info(f"Review file {filename}")
             file_content = await github.get_file_content(repo_name, filename, commit_sha, client)
             review_result = await do_ai_review(file_content, file_patch)
+            review_result = translate.wrap_magic(review_result)
             # 提交评论
             body = f"AI Review for {filename}:\n\n{review_result}"
             await github.create_commit_comment(repo_name, commit_sha, body, client)
@@ -196,13 +198,13 @@ async def review_pull_request(repo_name, pr_number, head_sha):
             logger.info(f"Review file {filename}")
             file_content = await github.get_file_content(repo_name, filename, head_sha, client)
             review_result = await do_ai_review(file_content, file_patch)
+            review_result = translate.wrap_magic(review_result)
             # 提交评论
             comment_data = {
-                "body": f"AI Review:\n\n{review_result}",
+                "body": f"AI Review for {filename}:\n\n{review_result}",
                 "commit_id": head_sha,
                 "path": file['filename'],
-                "line": 1,
-                "side": "RIGHT"
+                "subject_type": "file"
             }
             await github.create_pr_comment(repo_name, pr_number, comment_data, client)
 
@@ -210,3 +212,16 @@ async def review_pull_request(repo_name, pr_number, head_sha):
 async def review_commits(repo_name, commits):
     for commit in commits:
         await review_commit(repo_name, commit['sha'])
+
+
+async def review_specific_commit(commit_url: str):
+    repo_name, commit_sha = github.parse_commit_url(commit_url)
+    await review_commit(repo_name, commit_sha)
+
+
+async def review_specific_pr(pr_url: str):
+    repo_detail = github.parse_pullrequest_url(pr_url)
+    pr_data = await github.get_pullrequest(repo_detail.get_repo_fullname(), repo_detail.number)
+    head_sha = pr_data['head']['sha']
+    await review_pull_request(repo_detail.get_repo_fullname(), repo_detail.number, head_sha)
+

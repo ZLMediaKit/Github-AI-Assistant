@@ -17,7 +17,7 @@ from rich.progress import (
 )
 from typing_extensions import Annotated
 
-from apps import trans
+from apps import trans, review
 from core import settings, constants, translate, setup
 from core.console import console
 from core.log import init_logging
@@ -184,7 +184,7 @@ def trans_commit(input_url: Annotated[str, typer.Option(
     setup_result = settings.setup_translation_env(github_token, model_name, api_url, api_key, proxy_url)
     if not setup_result:
         return
-    trans.trans_issues(input_url)
+    asyncio.run(trans.trans_issues(input_url))
 
 
 @app.command("trans_discussions", help="Translate a specific discussion into english")
@@ -210,7 +210,7 @@ def trans_discussion(input_url: Annotated[str, typer.Option(help="GitHub discuss
     setup_result = settings.setup_translation_env(github_token, model_name, api_url, api_key, proxy_url)
     if not setup_result:
         return
-    trans.trans_discussion(input_url)
+    asyncio.run(trans.trans_discussion(input_url))
 
 
 @app.command("trans_pr", help="Translate a specific PR into english")
@@ -236,7 +236,7 @@ def trans_pr(input_url: Annotated[str, typer.Option(help="GitHub PR URL, for exa
     setup_result = settings.setup_translation_env(github_token, model_name, api_url, api_key, proxy_url)
     if not setup_result:
         return
-    trans.trans_pr(input_url)
+    asyncio.run(trans.trans_pr(input_url))
 
 
 @app.command("batch_trans", help="Batch translation repository for English")
@@ -266,7 +266,61 @@ def batch_trans(input_url: Annotated[
     setup_result = settings.setup_translation_env(github_token, model_name, api_url, api_key, proxy_url)
     if not setup_result:
         return
-    trans.batch_trans(input_url, query_filter, query_limit)
+    asyncio.run(trans.batch_trans(input_url, query_filter, query_limit))
+
+
+@app.command("review_commit", help="Review a specific commit")
+def review_specific_commit(input_url: Annotated[str, typer.Option(
+    help="GitHub commit URL, for example, "
+         "https://github.com/your-org/your-repository/commit/8768ec2f6bacc204f167ef19f15fb869664d9410")],
+                           github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
+                                                                          "github_pat_xxx_yyyyyy",
+                                                                     envvar=[constants.ENV_GITHUB_TOKEN])],
+                           model_name: Annotated[str, typer.Option(
+                               help="The name of the AI model, such as gemini/gemini-1.5-flash")] = None,
+                           api_url: Annotated[str, typer.Option(
+                               help="The request URL of the AI model API. If you use the official API, it is not required.")] = None,
+                           api_key: Annotated[str, typer.Option(
+                               help="The API key of the model, for example, xxxyyyzzz")] = None,
+                           proxy_url: Annotated[str, typer.Option(
+                               help="The url of the http proxy used when requesting the model's API, "
+                                    "for example, http://127.0.0.1:8118")] = None
+                           ):
+    """
+    Translate issues to english
+    :return:
+    """
+    setup_result = settings.setup_review_env(github_token, model_name, api_url, api_key, proxy_url)
+    if not setup_result:
+        return
+    asyncio.run(review.review_specific_commit(input_url))
+
+
+@app.command("review_pr", help="Review a specific pr")
+def review_specific_pr(input_url: Annotated[str, typer.Option(
+    help="GitHub commit URL, for example, "
+         "https://github.com/ZLMediaKit/ZLMediaKit/pull/3758")],
+                       github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
+                                                                      "github_pat_xxx_yyyyyy",
+                                                                 envvar=[constants.ENV_GITHUB_TOKEN])],
+                       model_name: Annotated[str, typer.Option(
+                           help="The name of the AI model, such as gemini/gemini-1.5-flash")] = None,
+                       api_url: Annotated[str, typer.Option(
+                           help="The request URL of the AI model API. If you use the official API, it is not required.")] = None,
+                       api_key: Annotated[str, typer.Option(
+                           help="The API key of the model, for example, xxxyyyzzz")] = None,
+                       proxy_url: Annotated[str, typer.Option(
+                           help="The url of the http proxy used when requesting the model's API, "
+                                "for example, http://127.0.0.1:8118")] = None
+                       ):
+    """
+    Translate issues to english
+    :return:
+    """
+    setup_result = settings.setup_review_env(github_token, model_name, api_url, api_key, proxy_url)
+    if not setup_result:
+        return
+    asyncio.run(review.review_specific_pr(input_url))
 
 
 @app.command("webhook", help="The GitHub webhook server")
