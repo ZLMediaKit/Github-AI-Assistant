@@ -21,7 +21,7 @@ from core.exception import GithubGraphQLException
 from core.models import IssueDetail, DiscussionDetail, PullRequestDetail, Label
 
 ALLOWED_EVENTS = ['pull_request', 'pull_request_review', 'pull_request_review_comment', 'issues', 'issue_comment',
-                  'discussion', 'discussion_comment', 'commit_comment']
+                  'discussion', 'discussion_comment', 'commit_comment', "push"]
 LABEL_TRANS = Label(name="TransByAI", color="bfdadc", description="Translated by AI", id="")
 LABEL_REFINED = Label(name="RefinedByAI", color="f29513", description="Refined by AI", id="")
 LABEL_ENGLISH_NATIVE = Label(name="EnglishNative", color="C3A138", description="English Native", id="")
