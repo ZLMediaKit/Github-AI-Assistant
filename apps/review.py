@@ -212,7 +212,7 @@ async def review_pull_request(repo_name, pr_number, commit_sha, commit_message):
 
 async def review_commits(repo_name, commits):
     for commit in commits:
-        await review_commit(repo_name, commit['sha'])
+        await review_commit(repo_name, commit['id'])
 
 
 async def review_specific_commit(commit_url: str):
