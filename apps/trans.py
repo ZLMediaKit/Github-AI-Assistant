@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 #  Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
-#  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/translation_issues).
+#  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/Github-AI-Assistant).
 #  Use of this source code is governed by MIT-like license that can be found in the
 #  LICENSE file in the root of the source tree. All contributing project authors
 #  may be found in the AUTHORS file in the root of the source tree.
@@ -20,7 +20,8 @@ from core.utils.github import RepoDetail
 
 async def update_issue_comment(comment: Comment, translated_body: str, original_body: str):
     try:
-        await github.update_issue_comment(comment.id, translate.wrap_magic(translated_body, original_body=original_body))
+        await github.update_issue_comment(comment.id,
+                                          translate.wrap_magic(translated_body, original_body=original_body))
         logger.info(f"Updated ok")
     except GithubGraphQLException as e:
         if e.is_forbidden():
@@ -39,7 +40,8 @@ async def trans_comments(comments: List[Comment]) -> bool:
             logger.info(f"Already translated, skip")
             continue
         logger.info(f"Translating...")
-        translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+        translator = translate.get_translator(settings.get_translator(),
+                                              max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
         translated_body, has_translated_by_gpt, real_translated = await translator.translate(detail.body)
         if real_translated:
             logger.info(f"New Body:\n{translated_body}\n")
@@ -83,7 +85,7 @@ async def trans_comments_by_type(detail: BaseDetail) -> bool:
         return await trans_pr_comments(detail.comments, detail.reviews)
 
 
-async def trans_detail(detail_type: str, detail: BaseDetail, repo_detail: RepoDetail):
+async def trans_detail(detail: BaseDetail, repo_detail: RepoDetail):
     has_gpt_label = False
     has_en_native_label = False
     for label in detail.labels:
@@ -107,12 +109,14 @@ async def trans_detail(detail_type: str, detail: BaseDetail, repo_detail: RepoDe
         if translate.already_english(detail.title):
             logger.info(f"Title is already english, skip")
         else:
-            translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+            translator = translate.get_translator(settings.get_translator(),
+                                                  max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
             translated_title, has_translated_by_gpt, real_translated = await translator.translate(detail.title)
             if real_translated:
                 issue_changed = True
                 logger.info(f"New Title is: {translated_title}")
-        translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+        translator = translate.get_translator(settings.get_translator(),
+                                              max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
         translated_body, has_translated_by_gpt, real_translated = await translator.translate(detail.body)
         if has_translated_by_gpt:
             issue_has_translated_by_gpt = True
@@ -156,14 +160,14 @@ async def trans_issues(issues_url):
     :param issues_url:
     :return:
     """
-    logger.info(f"run with issues: {issues_url}, use ai model: {translate.get_ai_model()}")
+    logger.info(f"run with issues: {issues_url}, use ai model: {settings.TRANSLATION_MODEL.model_name}")
     repo_detail = github.parse_issue_url(issues_url)
     try:
         issues_detail = await github.query_issue(repo_detail)
     except Exception as e:
         logger.exception(f"query_issue failed, {e}")
         return False
-    await trans_detail(issues_detail.model_type_text, issues_detail, repo_detail)
+    await trans_detail(issues_detail, repo_detail)
 
 
 async def trans_discussion_comments(comments: List[Comment]) -> bool:
@@ -175,13 +179,12 @@ async def trans_discussion_comments(comments: List[Comment]) -> bool:
         c_url = detail["url"]
         c_body = detail["body"]
         logger.info("")
-        log_list = []
-        log_list.append(f"===============Comment(#{index + 1})===============")
-        log_list.append(f"ID: {c_id}")
-        log_list.append(f"Author: {c_author}")
-        log_list.append(f"Replies: {c_replies}")
-        log_list.append(f"URL: {c_url}")
-        log_list.append(f"Body:\n{c_body}\n")
+        log_list = [f"===============Comment(#{index + 1})===============",
+                    f"ID: {c_id}",
+                    f"Author: {c_author}",
+                    f"Replies: {c_replies}",
+                    f"URL: {c_url}",
+                    f"Body:\n{c_body}\n"]
         logger.info("\n".join(log_list))
         if translate.TRANS_MAGIC in c_body:
             has_translated_by_gpt = True
@@ -190,7 +193,8 @@ async def trans_discussion_comments(comments: List[Comment]) -> bool:
             logger.info(f"Body is already english, skip")
         else:
             logger.info(f"Translating...")
-            translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+            translator = translate.get_translator(settings.get_translator(),
+                                                  max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
             translated_body, has_translated_by_gpt, real_translated = await translator.translate(c_body)
             if real_translated:
                 logger.info(f"New Body:\n{translated_body}\n")
@@ -222,7 +226,8 @@ async def trans_discussion_comments(comments: List[Comment]) -> bool:
                 logger.info(f"Body is already english, skip")
             else:
                 logger.info(f"Translating...")
-                translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+                translator = translate.get_translator(settings.get_translator(),
+                                                      max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
                 reply_body_trans, has_translated_by_gpt, real_translated = translator.translate(reply_body)
                 if real_translated:
                     logger.info(f"New Body:\n{reply_body_trans}\n")
@@ -239,14 +244,14 @@ async def trans_discussion(discussion_url):
     :param discussion_url:
     :return:
     """
-    logger.info(f"run with discussion: {discussion_url}, use ai model: {translate.get_ai_model()}")
+    logger.info(f"run with discussion: {discussion_url}, use ai model: {settings.TRANSLATION_MODEL.model_name}")
     repo_detail = github.parse_discussion_url(discussion_url)
     try:
         discussion_detail = await github.query_discussion(repo_detail)
     except Exception as e:
         logger.exception(f"query_issue failed, {e}")
         return False
-    await trans_detail(discussion_detail.model_type_text, discussion_detail, repo_detail)
+    await trans_detail(discussion_detail, repo_detail)
 
 
 async def trans_pr_comments(comments, reviews):
@@ -268,7 +273,8 @@ async def trans_pr_comments(comments, reviews):
             logger.info(f"Body is already english, skip")
         else:
             logger.info(f"Translating...")
-            translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+            translator = translate.get_translator(settings.get_translator(),
+                                                  max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
             c_body_trans, has_translated_by_gpt, real_translated = await translator.translate(c_body)
             if real_translated:
                 logger.info(f"New Body:\n{c_body_trans}\n")
@@ -300,7 +306,8 @@ async def trans_pr_comments(comments, reviews):
                 logger.info(f"Body is already english, skip")
             else:
                 logger.info(f"Translating...")
-                translator = translate.get_translator(settings.get_translator(), max_tokens=settings.get_max_tokens())
+                translator = translate.get_translator(settings.get_translator(),
+                                                      max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
                 c_body_trans, has_translated_by_gpt, real_translated = await translator.translate(c_body)
                 if real_translated:
                     logger.info(f"New Body:\n{c_body_trans}\n")
@@ -325,7 +332,7 @@ async def trans_pr_comments(comments, reviews):
                 else:
                     logger.info(f"Translating...")
                     translator = translate.get_translator(settings.get_translator(),
-                                                          max_tokens=settings.get_max_tokens())
+                                                          max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
                     reply_body_trans, has_translated_by_gpt, real_translated = await translator.translate(reply_body)
                     if real_translated:
                         logger.info(f"New Body:\n{reply_body_trans}\n")
@@ -342,14 +349,14 @@ async def trans_pr(pr_url):
     :param pr_url:
     :return:
     """
-    logger.info(f"run with pull request: {pr_url}, use ai model: {translate.get_ai_model()}")
+    logger.info(f"run with pull request: {pr_url}, use ai model: {settings.TRANSLATION_MODEL.model_name}")
     repo_detail = github.parse_pullrequest_url(pr_url)
     try:
         pr_detail = await github.query_pullrequest_all_in_one(repo_detail)
     except Exception as e:
         logger.exception(f"query_issue failed, {e}")
         return False
-    await trans_detail(pr_detail.model_type_text, pr_detail, repo_detail)
+    await trans_detail(pr_detail, repo_detail)
 
 
 async def batch_trans(input_url, query_filter, query_limit):
@@ -359,7 +366,7 @@ async def batch_trans(input_url, query_filter, query_limit):
     logs.append(f"repository: {input_url}")
     logs.append(f"query_filter: {query_filter}")
     logs.append(f"query_limit: {query_limit}")
-    logger.info(f"run with {', '.join(logs)}, use ai model: {translate.get_ai_model()}")
+    logger.info(f"run with {', '.join(logs)}, use ai model: {settings.TRANSLATION_MODEL.model_name}")
 
     if query_limit <= 0 or query_limit > 100:
         logger.error("query_limit should be in [1, 100]")

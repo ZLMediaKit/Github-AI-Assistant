@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 #  Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
-#  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/translation_issues).
+#  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/Github-AI-Assistant).
 #  Use of this source code is governed by MIT-like license that can be found in the
 #  LICENSE file in the root of the source tree. All contributing project authors
 #  may be found in the AUTHORS file in the root of the source tree.
@@ -56,3 +56,28 @@ class RateLimiter:
             if self.token_bucket.empty():
                 await asyncio.sleep(1 / (self.rate_limit / self.time_unit))
         await self.token_bucket.get()
+
+
+class ApiLimiter:
+    def __init__(self):
+        self.limiters: dict[str, RateLimiter] = {}
+
+    def add_limiter(self, key: str, limiter: RateLimiter):
+        self.limiters[key] = limiter
+
+    def add_limiter_by_limit(self, key: str, rate_limit: int, time_unit: int = 60):
+        limiter = RateLimiter(rate_limit, time_unit)
+        self.limiters[key] = limiter
+
+    def get_limiter(self, key: str) -> RateLimiter:
+        return self.limiters.get(key, None)
+
+    def get_limiters(self) -> dict[str, RateLimiter]:
+        return self.limiters
+
+    def remove_limiter(self, key: str):
+        self.limiters.pop(key, None)
+
+    def clear(self):
+        self.limiters.clear()
+

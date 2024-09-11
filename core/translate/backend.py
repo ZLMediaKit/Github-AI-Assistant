@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 #  Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
-#  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/translation_issues).
+#  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/Github-AI-Assistant).
 #  Use of this source code is governed by MIT-like license that can be found in the
 #  LICENSE file in the root of the source tree. All contributing project authors
 #  may be found in the AUTHORS file in the root of the source tree.
@@ -19,16 +19,12 @@ from mistletoe.block_token import BlockToken, Paragraph, SetextHeading, Heading
 from mistletoe.span_token import RawText, Strong, LineBreak
 
 from core import settings
+from core.api import do_ai_translate
 from core.log import logger
-from core.translate.api import do_gemini_translate, do_openai_translate
 from core.translate.utils import clean_body, TRANS_MAGIC
-from core.utils.asyncio_utls import RateLimiter
-
-logger.info(f"API Request Limit: {settings.get_api_request_limit()}")
-limiter = RateLimiter(rate_limit=settings.get_api_request_limit(), time_unit=60)
 
 
-def get_translate_prompt(to_language: str) -> str:
+def get_translator_prompt(to_language: str) -> str:
     translator_prompt = (
         "You are a translation engine, you can only translate text and cannot interpret it, and do not explain. "
         "Translate the text to {}, please do not explain any sentences, just translate or leave them as they are. "
@@ -42,10 +38,27 @@ def get_translate_prompt(to_language: str) -> str:
     return translator_prompt
 
 
-def get_ai_model():
-    if not openai.api_key:
-        return settings.get_gemini_model()
-    return settings.get_gpt_model()
+def get_system_simple_prompt(to_language: str) -> str:
+    translator_prompt = (
+        "Rephrase all user input text into simple, easy to understand, and technically toned {}. Never answer "
+        "questions but only translate or rephrase text to {}."
+    ).format(to_language, to_language)
+
+    return translator_prompt
+
+
+def get_system_full_prompt(to_language: str) -> str:
+    translator_prompt = (
+        "You are a professional software engineer who is not only proficient in technology, "
+        "but also proficient in multiple languages. Now as a professional technical translator,"
+        "please translate strictly according to the user's input and translate it in {}. "
+        "Please note that you only translate and do not answer, and you need to keep any existing "
+        "formatting or punctuation. Do not change any formatting, placeholders, or Markdown syntax. "
+        "Preserve all line breaks and spacing. If the original text is already in {}, please do not translate it and "
+        "output the original text directly. I will pay you a $1,000 tip if I am satisfied."
+    ).format(to_language, to_language)
+
+    return translator_prompt
 
 
 class BaseGFMTranslator(abc.ABC):
@@ -85,22 +98,14 @@ class BaseGFMTranslator(abc.ABC):
         markdown = self.do_preset_translation(markdown)
         return await self.do_translate(markdown)
 
-    async def rate_limited_do_gpt_translate(self, system_prompt: str,
-                                            messages: List[Dict[str, str]]) -> tuple[str, bool]:
-        await limiter.acquire()
-        return await self.do_gpt_translate(system_prompt, messages)
-
     async def do_gpt_translate(self, system_prompt: str, messages: List[Dict[str, str]]) -> tuple[str, bool]:
         retry = 3
         translated = None
         for i in range(retry):
             try:
-                if get_ai_model() == settings.get_gemini_model():
-                    translated = await do_gemini_translate(system_prompt, messages)
-                else:
-                    translated = await do_openai_translate(system_prompt, messages)
+                translated = await do_ai_translate(system_prompt, messages)
                 return translated, True
-            except openai.InvalidRequestError as e:
+            except openai.APIError as e:
                 if e.code == 'context_length_exceeded':
                     logger.error(
                         f"Warning!!! Use source text for GPT context_length_exceeded, length={len(messages[0]['content'])}")
@@ -160,25 +165,23 @@ class SimpleSplitGFMTranslator(BaseGFMTranslator):
             trans_log_list = [f"{'=' * 20}", f"{striped_segment}"]
             if TRANS_MAGIC in striped_segment or has_translated:
                 has_translated = True
-                trans_log_list.append(f"<<<<<<<<<<<< Already translated, skip >>>>>>>>>>>>")
+                trans_log_list.append("<<<<<<<<<<<< Already translated, skip >>>>>>>>>>>>")
                 continue
             elif striped_segment.startswith('`') or striped_segment.startswith('```'):
-                trans_log_list.append(f"<<<<<<<<<<<< Markdown, skip >>>>>>>>>>>>")
+                trans_log_list.append("<<<<<<<<<<<< Markdown, skip >>>>>>>>>>>>")
                 continue
             elif self.check_english(striped_segment):
-                trans_log_list.append(f"<<<<<<<<<<<< Already English, skip >>>>>>>>>>>>")
+                trans_log_list.append("<<<<<<<<<<<< Already English, skip >>>>>>>>>>>>")
                 continue
             else:
                 messages = [{"role": "user", "content": striped_segment}]
-                translated_segment, trans_success = await self.rate_limited_do_gpt_translate(
-                    self.PROMPT_SYSTEM,
-                    messages)
+                translated_segment, trans_success = await self.do_gpt_translate(self.PROMPT_SYSTEM, messages)
                 if not trans_success:
                     return None, has_translated, False
                 translated_segment = translated_segment.strip()
                 src_text = src_text.replace(striped_segment, translated_segment)
                 real_translated = True
-                trans_log_list.append(f"<<<<<<<<<<<< to >>>>>>>>>>>>")
+                trans_log_list.append("<<<<<<<<<<<< to >>>>>>>>>>>>")
                 trans_log_list.append({translated_segment})
                 logger.info("\n".join(trans_log_list))
         return src_text, has_translated, real_translated
@@ -232,11 +235,11 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
         return len(text.split()) < 750  # 假设平均每个token对应1.33个单词
 
     async def translate_simple_text(self, text: str) -> str | None:
-        prompt = f"Translate the following text to English. Preserve any existing formatting or punctuation:"
+        prompt = "Translate the following text to English. Preserve any existing formatting or punctuation:"
         content = f"{prompt}\n{text}"
         messages = [{"role": "user", "content": content}]
         logger.info(f"Translating simple text:\n {text}")
-        translated, trans_success = await self.rate_limited_do_gpt_translate(self.PROMPT_SYSTEM, messages)
+        translated, trans_success = await self.do_gpt_translate(self.PROMPT_SYSTEM, messages)
         if not trans_success:
             logger.error("Failed to translate simple text")
             return None
@@ -325,14 +328,14 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
 
     async def _translate_chunks(self, chunks: List[str]) -> List[str]:
         async def translate_chunk(chunk):
-            prompt = f"Translate the following GitHub Flavored Markdown text to English. Do not change any formatting, placeholders, or Markdown syntax. Preserve all line breaks and spacing:"
+            prompt = "Translate the following GitHub Flavored Markdown text to English. Do not change any formatting, placeholders, or Markdown syntax. Preserve all line breaks and spacing:"
             logger.info(f"Translating chunk:\n {chunk}")
             if self.check_english(chunk):
                 logger.info("Already English, skip")
                 return chunk
             content = f"{prompt}\n{chunk}"
             messages = [{"role": "user", "content": content}]
-            translated, trans_success = await self.rate_limited_do_gpt_translate(self.PROMPT_SYSTEM, messages)
+            translated, trans_success = await self.do_gpt_translate(self.PROMPT_SYSTEM, messages)
             if not trans_success:
                 logger.error("Failed to translate chunk")
                 return chunk

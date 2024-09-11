@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 #  Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
-#  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/translation_issues).
+#  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/Github-AI-Assistant).
 #  Use of this source code is governed by MIT-like license that can be found in the
 #  LICENSE file in the root of the source tree. All contributing project authors
 #  may be found in the AUTHORS file in the root of the source tree.
@@ -61,6 +61,8 @@ class WebhookService(BaseApplication):
 
     async def before_server_start(self, app, loop):
         logger.setLevel(settings.LOGGER_LEVEL)
+        settings.init_translation_model()
+        settings.init_review_model()
 
     async def after_server_stop(self, app, loop):
         pass

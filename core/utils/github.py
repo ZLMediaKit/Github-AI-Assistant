@@ -1,12 +1,13 @@
 # -*- coding:utf-8 -*-
 #  Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
-#  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/translation_issues).
+#  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/Github-AI-Assistant).
 #  Use of this source code is governed by MIT-like license that can be found in the
 #  LICENSE file in the root of the source tree. All contributing project authors
 #  may be found in the AUTHORS file in the root of the source tree.
 #
 __author__ = 'alex'
 
+import base64
 import hashlib
 import hmac
 from typing import Optional
@@ -25,6 +26,7 @@ LABEL_TRANS = Label(name="TransByAI", color="bfdadc", description="Translated by
 LABEL_REFINED = Label(name="RefinedByAI", color="f29513", description="Refined by AI", id="")
 LABEL_ENGLISH_NATIVE = Label(name="EnglishNative", color="C3A138", description="English Native", id="")
 IGNORE_LOGIN = 'dependabot'
+GITHUB_REST_API = "https://api.github.com"
 
 
 class RepoDetail(BaseModel):
@@ -49,6 +51,10 @@ def get_rest_headers() -> dict:
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "ZLMediaKit",
     }
+
+
+def get_github_rest_api_endpoint(path: str) -> str:
+    return f"{GITHUB_REST_API}{path}"
 
 
 def parse_repository_url(url: str) -> RepoDetail:
@@ -86,7 +92,7 @@ def parse_pullrequest_url(url: str) -> RepoDetail:
 
 def parse_commit_url(url: str) -> RepoDetail:
     """
-    :param url: GitHub PullRequest URL, for example, https://github.com/ZLMediaKit/translation_issues/commit/8547b7710226e80589e46570c546d8803b345647
+    :param url: GitHub PullRequest URL, for example, https://github.com/ZLMediaKit/Github-AI-Assistant/commit/8547b7710226e80589e46570c546d8803b345647
     """
     parsed_url = urlparse(url)
     url_path_list = parsed_url.path.strip('/').split('/')
@@ -119,7 +125,7 @@ async def do_post_requests(json_data):
 
 async def do_rest_path_requests(path, json_data):
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.patch(f'https://api.github.com{path}',
+        response = await client.patch(get_github_rest_api_endpoint(path),
                                       json=json_data,
                                       headers=get_rest_headers())
         if response.status_code != 200:
@@ -128,15 +134,52 @@ async def do_rest_path_requests(path, json_data):
         return result
 
 
-async def do_rest_post_requests(path, json_data):
+async def do_rest_post_requests(path, json_data, http_client: httpx.AsyncClient = None):
+    if http_client:
+        response = await http_client.post(get_github_rest_api_endpoint(path),
+                                          json=json_data,
+                                          headers=get_rest_headers())
+        if response.status_code != 201:
+            raise Exception(f"request failed, code={response.status_code}, text={response.text}")
+        result = response.json()
+        return result
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(f'https://api.github.com{path}',
+        response = await client.post(get_github_rest_api_endpoint(path),
                                      json=json_data,
                                      headers=get_rest_headers())
         if response.status_code != 201:
             raise Exception(f"request failed, code={response.status_code}, text={response.text}")
         result = response.json()
         return result
+
+
+async def do_rest_get_requests(path, http_client: httpx.AsyncClient = None):
+    if http_client:
+        response = await http_client.get(get_github_rest_api_endpoint(path), headers=get_rest_headers())
+        if response.status_code != 200:
+            raise Exception(f"request failed, code={response.status_code}, text={response.text}")
+        return response.json()
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.get(get_github_rest_api_endpoint(path), headers=get_rest_headers())
+        if response.status_code != 200:
+            raise Exception(f"request failed, code={response.status_code}, text={response.text}")
+        return response.json()
+
+
+async def get_commit(repo_name: str, commit_sha: str, http_client: httpx.AsyncClient = None) -> dict:
+    path = f"/repos/{repo_name}/commits/{commit_sha}"
+    return await do_rest_get_requests(path, http_client)
+
+
+async def get_file_content(repo_name: str, file_path: str, ref: str, http_client: httpx.AsyncClient = None) -> str:
+    path = f"/repos/{repo_name}/contents/{file_path}?ref={ref}"
+    content_data = await do_rest_get_requests(path, http_client)
+    return base64.b64decode(content_data['content']).decode('utf-8')
+
+
+async def get_pr_files(repo_name: str, pr_number: int, http_client: httpx.AsyncClient = None) -> list:
+    path = f"/repos/{repo_name}/pulls/{pr_number}/files"
+    return await do_rest_get_requests(path, http_client)
 
 
 async def query_issue(repo_model: RepoDetail) -> IssueDetail:
@@ -517,31 +560,44 @@ async def update_pullrequest_review_comment(pr_id, body):
     return result['data']['updatePullRequestReviewComment']['pullRequestReviewComment']['id']
 
 
-async def update_commit_comment(repo_detail: RepoDetail, comment_id, body):
-    path = "/repos/{owner}/{repo}/comments/{comment_id}"
+async def update_commit_comment(repo_name, comment_id, body):
+    path = "/repos/{repo_name}/comments/{comment_id}"
     data = {
         'body': body,
     }
 
-    result = await do_rest_path_requests(path.format(owner=repo_detail.owner,
-                                                     repo=repo_detail.name,
+    result = await do_rest_path_requests(path.format(repo_name=repo_name,
                                                      comment_id=comment_id), data)
     return result['body'] == body
 
 
-async def create_commit_comment(repo_detail: RepoDetail, commit_id, body):
+async def create_commit_comment(repo_name: str, commit_id: str, body: str, http_client: httpx.AsyncClient = None):
     """
     /repos/{owner}/{repo}/commits/{commit_sha}/comments
-    :param repo_detail:
+    :param http_client:
+    :param repo_name:
     :param commit_id:
     :param body:
     :return:
     """
-    path = f"/repos/{repo_detail.owner}/{repo_detail.name}/commits/{commit_id}/comments"
+    path = f"/repos/{repo_name}/commits/{commit_id}/comments"
     data = {
         'body': body,
     }
-    result = await do_rest_post_requests(path, data)
+    return await do_rest_post_requests(path, data, http_client)
+
+
+async def create_pr_comment(repo_name: str, pr_number: int, comment_data: dict, http_client: httpx.AsyncClient = None):
+    """
+    /repos/{repo_name}/pulls/{pr_number}/comments"
+    :param http_client:
+    :param repo_name:
+    :param pr_number:
+    :param comment_data:
+    :return:
+    """
+    path = f"/repos/{repo_name}/pulls/{pr_number}/comments"
+    return await do_rest_post_requests(path, comment_data, http_client)
 
 
 async def update_pullrequest(pr_id, title, body, original_title=None):

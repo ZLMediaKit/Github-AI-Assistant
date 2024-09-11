@@ -1,6 +1,9 @@
-# translation_issues
+# Github AI Assistant
 
-使用 AI 自动将 GitHub issues/discussions/pull requests翻译成英文。
+[![GitHub issues](https://img.shields.io/github/issues/ZLMediaKit/Github-AI-Assistant)]
+
+您Github存储库的最佳AI助手, 它不但可以帮助您自动翻译issues/discussions/pr/commit到指定语言, 
+还可以通过AI模型帮助您进行代码审查, 代码自动修复等功能.
 
 [English](README.md)
 
@@ -25,7 +28,7 @@
 ubuntu20.04下部署:
 
 ```bash
-git clone https://github.com/ZLMediaKit/translation_issues.git
+git clone https://github.com/ZLMediaKit/Github-AI-Assistant.git
 cd translation_issues
 chmod +x ./run.sh
 sudo ./run.sh
@@ -34,7 +37,7 @@ sudo ./run.sh
 其他系统下部署:
 
 ```bash
-git clone https://github.com/ZLMediaKit/translation_issues.git
+git clone https://github.com/ZLMediaKit/Github-AI-Assistant.git
 cd translation_issues
 # 安装python3.11或以上版本
 # 创建虚拟环境
@@ -58,14 +61,14 @@ sudo ./run.sh auto_start
 ```bash
 ./run.sh --help
 ```
-![2023-12-30](https://github.com/ZLMediaKit/translation_issues/assets/24582085/282c5183-acb6-4173-881e-1e088b53996c)
+![2023-12-30](https://github.com/ZLMediaKit/Github-AI-Assistant/assets/24582085/282c5183-acb6-4173-881e-1e088b53996c)
 
 查看某个命令的帮助:
 
 ```bash
 ./run.sh trans_issues --help
 ```
-![2023-12-30](https://github.com/ZLMediaKit/translation_issues/assets/24582085/839afbc1-fac5-491c-804a-1b5aaf289fcd)
+![2023-12-30](https://github.com/ZLMediaKit/Github-AI-Assistant/assets/24582085/839afbc1-fac5-491c-804a-1b5aaf289fcd)
 
 设置环境变量:
 

@@ -1,6 +1,8 @@
-# translation_issues
+# Github AI Assistant
 
-Automatically translate GitHub issues/discussions/pull requests into English using AI.
+[![GitHub issues](https://img.shields.io/github/issues/ZLMediaKit/Github-AI-Assistant)]
+
+The best AI assistant for your Github repository, it can not only help you automatically translate issues/discussions/pr/commit to the specified language, but also help you with code review, automatic code repair and other functions through AI models.
 
 [中文](README_zh.md)
 
@@ -26,7 +28,7 @@ This project references and utilizes some code from the [ossrs/discussion-transl
 Deploy on Ubuntu 20.04:
 
 ```bash
-git clone https://github.com/ZLMediaKit/translation_issues.git
+git clone https://github.com/ZLMediaKit/Github-AI-Assistant.git
 cd translation_issues
 chmod +x ./run.sh
 sudo ./run.sh
@@ -36,7 +38,7 @@ Deploy on other systems:
 
 ```bash
 
-git clone https://github.com/ZLMediaKit/translation_issues.git
+git clone https://github.com/ZLMediaKit/Github-AI-Assistant.git
 cd translation_issues
 # Install python3.11 or later
 # Create a virtual environment
@@ -60,14 +62,14 @@ View help:
 ```bash
 ./run.sh --help
 ```
-![2023-12-30](https://github.com/ZLMediaKit/translation_issues/assets/24582085/282c5183-acb6-4173-881e-1e088b53996c)
+![2023-12-30](https://github.com/ZLMediaKit/Github-AI-Assistant/assets/24582085/282c5183-acb6-4173-881e-1e088b53996c)
 
 View help for a specific command:
 
 ```bash
 ./run.sh trans_issues --help
 ```
-![2023-12-30](https://github.com/ZLMediaKit/translation_issues/assets/24582085/839afbc1-fac5-491c-804a-1b5aaf289fcd)
+![2023-12-30](https://github.com/ZLMediaKit/Github-AI-Assistant/assets/24582085/839afbc1-fac5-491c-804a-1b5aaf289fcd)
 
 Set environment variables:
 
