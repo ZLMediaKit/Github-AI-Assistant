@@ -177,7 +177,7 @@ async def review_file(file_detail: dict, repo_name: str, commit_message: str, co
             return None
     logger.info(f"Review file {filename}")
     file_content = await github.get_file_content(repo_name, filename, commit_sha, client)
-    review_result = await do_ai_review(filename, commit_message, file_status, file_content, file_patch)
+    review_result = await do_ai_review(filename, commit_message, file_status, file_content, file_patch, repo_name)
     return translate.wrap_magic(review_result)
 
 

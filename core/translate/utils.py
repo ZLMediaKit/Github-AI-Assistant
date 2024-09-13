@@ -127,13 +127,15 @@ def validate_code(content):
                 elif char in ")}]":
                     if not stack:
                         context = get_context(lines, line_num, i)
-                        return False, f"在第{line_num}行，位置{i}处有未匹配的闭合括号 '{char}':\n{context}"
+                        return False, f"In line {line_num}, position {i} there is an unmatched" \
+                                      f" closing bracket '{char}':\n{context}"
                     last_open, open_line, open_pos = stack.pop()
                     if (char == ")" and last_open != "(") or \
                             (char == "}" and last_open != "{") or \
                             (char == "]" and last_open != "["):
                         context = get_context(lines, line_num, i)
-                        return False, f"在第{line_num}行，位置{i}处的括号 '{char}' 与第{open_line}行，位置{open_pos}处的括号 '{last_open}' 不匹配:\n{context}"
+                        return False, f"In line {line_num}, position {i} the bracket '{char}' does not match the" \
+                                      f" bracket '{last_open}' at line {open_line}, position {open_pos}:\n{context}"
 
         # 处理 #if, #ifdef, #ifndef, #else, #elif, #endif
         stripped_line = line.strip()
@@ -142,23 +144,21 @@ def validate_code(content):
         elif stripped_line.startswith('#endif'):
             if not ifdef_stack:
                 context = get_context(lines, line_num, 0)
-                return False, f"在第{line_num}行有多余的 #endif:\n{context}"
+                return False, f"In line {line_num} there is an extra #endif:\n{context}"
             ifdef_stack.pop()
         elif stripped_line.startswith('#else') or stripped_line.startswith('#elif'):
             if not ifdef_stack:
                 context = get_context(lines, line_num, 0)
-                return False, f"在第{line_num}行有孤立的 {stripped_line.split()[0]}:\n{context}"
+                return False, f"In line {line_num} there is an isolated {stripped_line.split()[0]}:\n{context}"
 
     if stack:
         last_open, line_num, pos = stack[-1]
         context = get_context(lines, line_num, pos)
-        return False, f"在第{line_num}行，位置{pos}处有未匹配的开放括号 '{last_open}':\n{context}"
-
+        return False, f"In line {line_num}, position {pos} there is an unmatched opening bracket '{last_open}':\n{context}"
     if ifdef_stack:
         line_num = ifdef_stack[-1]
         context = get_context(lines, line_num, 0)
-        return False, f"在第{line_num}行开始的条件编译指令没有匹配的 #endif:\n{context}"
-
+        return False, f"In line {line_num} there is a condition directive without a matching #endif:\n{context}"
     return True, ""
 
 

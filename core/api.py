@@ -336,7 +336,8 @@ async def do_ai_translate(system_prompt: str, messages):
     return translated
 
 
-async def do_ai_review(filename: str, commit_message: str, file_status: str, code_content: str, file_patch: str):
+async def do_ai_review(filename: str, commit_message: str, file_status: str,
+                       code_content: str, file_patch: str, repo_name: str = ""):
     if file_status == "added":
         review_type = "New File"
         file_patch = ""
@@ -349,11 +350,19 @@ async def do_ai_review(filename: str, commit_message: str, file_status: str, cod
         file_patch = ""
     if code_content is None:
         code_content = ""
+    if repo_name:
+        project_name = repo_name.split('/')[1]
+        project_url = f"https://github.com/{repo_name}"
+    else:
+        project_name = ""
+        project_url = ""
     messages = [{"role": "user", "content": USER_PROMPT.format(
         full_code=code_content,
         filename=filename,
         review_type=review_type,
         commit_message=commit_message,
+        project_url=project_url,
+        project_name=project_name,
         patch_code=file_patch)}]
     system_prompt = REVIEW_PROMPT_FULL.format(max_tokens=settings.REVIEW_MODEL.max_output_tokens)
 
