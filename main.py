@@ -339,7 +339,7 @@ def trans_sourcecode_comments(project_path: Annotated[str, typer.Option(
                            help="The url of the http proxy used when requesting the model's API, "
                                 "for example, http://127.0.0.1:8118")] = None
                        ):
-    setup_result = settings.setup_review_env(github_token, model_name, api_url, api_key, proxy_url)
+    setup_result = settings.setup_translation_env(github_token, model_name, api_url, api_key, proxy_url)
     if not setup_result:
         return
     asyncio.run(trans.trans_sourcecode_comments(project_path))

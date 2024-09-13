@@ -462,7 +462,7 @@ async def trans_sourcecode_comments(project_path):
     for file in cpp_files:
         logger.info(f"Processing file: {file}")
         try:
-            result = process_file(file)
+            result = await process_file(file)
             if result:
                 logger.info(f"Successfully processed file: {file}")
             else:
