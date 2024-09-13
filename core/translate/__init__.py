@@ -6,7 +6,9 @@
 #  may be found in the AUTHORS file in the root of the source tree.
 #
 from .backend import SimpleSplitGFMTranslator, AdvancedGFMTranslator, BaseGFMTranslator
-from .utils import wrap_magic, clean_body, already_english, TRANS_MAGIC, TRANS_DELIMITER, TRANS_DELIMITER_PR
+from .utils import wrap_magic, clean_body, already_english, TRANS_MAGIC, TRANS_DELIMITER, TRANS_DELIMITER_PR, \
+    TRANSLATION_MARK, BATCH_SIZE, find_cpp_files, extract_comments, is_already_translated, format_translated_comment,\
+    validate_code
 
 
 def get_translator(translator_type: str, **kwargs) -> BaseGFMTranslator:

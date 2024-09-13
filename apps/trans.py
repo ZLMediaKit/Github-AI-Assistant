@@ -8,6 +8,7 @@
 
 __author__ = 'alex'
 
+import hashlib
 from typing import List
 
 from core import translate, models, settings
@@ -22,7 +23,7 @@ async def update_issue_comment(comment: Comment, translated_body: str, original_
     try:
         await github.update_issue_comment(comment.id,
                                           translate.wrap_magic(translated_body, original_body=original_body))
-        logger.info(f"Updated ok")
+        logger.info("Updated ok")
     except GithubGraphQLException as e:
         if e.is_forbidden():
             logger.error(f"Warning!!! Ignore update comment {comment.id} failed, forbidden, {e.errors}")
@@ -37,9 +38,9 @@ async def trans_comments(comments: List[Comment]) -> bool:
         logger.info(f"===============Comment(#{index + 1})===============\n{detail.get_detail_text()}")
         if translate.TRANS_MAGIC in detail.body:
             has_translated_by_gpt = True
-            logger.info(f"Already translated, skip")
+            logger.info("Already translated, skip")
             continue
-        logger.info(f"Translating...")
+        logger.info("Translating...")
         translator = translate.get_translator(settings.get_translator(),
                                               max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
         translated_body, has_translated_by_gpt, real_translated = await translator.translate(detail.body)
@@ -67,7 +68,7 @@ async def update_detail(detail_type: str, detail_id: str, translated_title: str,
                                                                  translate.TRANS_DELIMITER_PR,
                                                                  original_body=original_body),
                                             original_title=original_title)
-        logger.info(f"Updated ok")
+        logger.info("Updated ok")
     except GithubGraphQLException as e:
         if e.is_forbidden():
             logger.warning(f"Warning!!! Ignore update [{detail_type}] {detail_id} failed, forbidden, {e.errors}")
@@ -101,13 +102,13 @@ async def trans_detail(detail: BaseDetail, repo_detail: RepoDetail):
     translated_body = detail.body
     if translate.TRANS_MAGIC in detail.body:
         issue_has_translated_by_gpt = True
-        logger.info(f"Body is already translated, skip")
+        logger.info("Body is already translated, skip")
     elif translate.already_english(detail.body):
-        logger.info(f"Body is already english, skip")
+        logger.info("Body is already english, skip")
     else:
-        logger.info(f"Translating...")
+        logger.info("Translating...")
         if translate.already_english(detail.title):
-            logger.info(f"Title is already english, skip")
+            logger.info("Title is already english, skip")
         else:
             translator = translate.get_translator(settings.get_translator(),
                                                   max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
@@ -124,14 +125,14 @@ async def trans_detail(detail: BaseDetail, repo_detail: RepoDetail):
             issue_changed = True
             logger.info(f"New Body:\n{translated_body}\n")
     if not issue_changed:
-        logger.info(f"Nothing changed, skip")
+        logger.info("Nothing changed, skip")
     else:
         await update_detail(detail.model_type_text, detail.id, translated_title, translated_body,
                             detail.title, detail.body)
     comment_has_translated_by_gpt = await trans_comments_by_type(detail)
     translated_by_gpt = comment_has_translated_by_gpt or issue_has_translated_by_gpt
     if translated_by_gpt or has_gpt_label:
-        logger.info(f"Label is already set, skip")
+        logger.info("Label is already set, skip")
     else:
         await add_label(detail.id, repo_detail, github.LABEL_TRANS)
         has_gpt_label = True
@@ -188,11 +189,11 @@ async def trans_discussion_comments(comments: List[Comment]) -> bool:
         logger.info("\n".join(log_list))
         if translate.TRANS_MAGIC in c_body:
             has_translated_by_gpt = True
-            logger.info(f"Already translated, skip")
+            logger.info("Already translated, skip")
         elif translate.already_english(c_body):
-            logger.info(f"Body is already english, skip")
+            logger.info("Body is already english, skip")
         else:
-            logger.info(f"Translating...")
+            logger.info("Translating...")
             translator = translate.get_translator(settings.get_translator(),
                                                   max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
             translated_body, has_translated_by_gpt, real_translated = await translator.translate(c_body)
@@ -201,7 +202,7 @@ async def trans_discussion_comments(comments: List[Comment]) -> bool:
                 try:
                     await github.update_discussion_comment(c_id,
                                                            translate.wrap_magic(translated_body, original_body=c_body))
-                    logger.info(f"Updated ok")
+                    logger.info("Updated ok")
                 except GithubGraphQLException as e:
                     if e.is_forbidden():
                         logger.error(f"Warning!!! Ignore update comment {c_id} failed, forbidden, {e.errors}")
@@ -221,11 +222,11 @@ async def trans_discussion_comments(comments: List[Comment]) -> bool:
 
             if translate.TRANS_MAGIC in reply_body:
                 has_translated_by_gpt = True
-                logger.info(f"Already translated, skip")
+                logger.info("Already translated, skip")
             elif translate.already_english(reply_body):
-                logger.info(f"Body is already english, skip")
+                logger.info("Body is already english, skip")
             else:
-                logger.info(f"Translating...")
+                logger.info("Translating...")
                 translator = translate.get_translator(settings.get_translator(),
                                                       max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
                 reply_body_trans, has_translated_by_gpt, real_translated = translator.translate(reply_body)
@@ -234,7 +235,7 @@ async def trans_discussion_comments(comments: List[Comment]) -> bool:
                     await github.update_discussion_comment(reply_id,
                                                            translate.wrap_magic(reply_body_trans,
                                                                                 original_body=reply_body))
-                    logger.info(f"Updated ok")
+                    logger.info("Updated ok")
     return has_translated_by_gpt
 
 
@@ -268,11 +269,11 @@ async def trans_pr_comments(comments, reviews):
 
         if translate.TRANS_MAGIC in c_body:
             has_translated_by_gpt = True
-            logger.info(f"Already translated, skip")
+            logger.info("Already translated, skip")
         elif translate.already_english(c_body):
-            logger.info(f"Body is already english, skip")
+            logger.info("Body is already english, skip")
         else:
-            logger.info(f"Translating...")
+            logger.info("Translating...")
             translator = translate.get_translator(settings.get_translator(),
                                                   max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
             c_body_trans, has_translated_by_gpt, real_translated = await translator.translate(c_body)
@@ -281,7 +282,7 @@ async def trans_pr_comments(comments, reviews):
                 try:
                     await github.update_issue_comment(c_id,
                                                       translate.wrap_magic(c_body_trans, original_body=c_body))
-                    logger.info(f"Updated ok")
+                    logger.info("Updated ok")
                 except GithubGraphQLException as e:
                     if e.is_forbidden():
                         logger.error(f"Warning!!! Ignore update comment {c_id} failed, forbidden, {e.errors}")
@@ -301,11 +302,11 @@ async def trans_pr_comments(comments, reviews):
 
             if translate.TRANS_MAGIC in c_body:
                 has_translated_by_gpt = True
-                logger.info(f"Already translated, skip")
+                logger.info("Already translated, skip")
             elif translate.already_english(c_body):
-                logger.info(f"Body is already english, skip")
+                logger.info("Body is already english, skip")
             else:
-                logger.info(f"Translating...")
+                logger.info("Translating...")
                 translator = translate.get_translator(settings.get_translator(),
                                                       max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
                 c_body_trans, has_translated_by_gpt, real_translated = await translator.translate(c_body)
@@ -313,7 +314,7 @@ async def trans_pr_comments(comments, reviews):
                     logger.info(f"New Body:\n{c_body_trans}\n")
                     await github.update_pullrequest_review(c_id,
                                                            translate.wrap_magic(c_body_trans, original_body=c_body))
-                    logger.info(f"Updated ok")
+                    logger.info("Updated ok")
 
             for reply_position, review_reply_obj in enumerate(review_obj["comments"]["nodes"]):
                 reply_id = review_reply_obj["id"]
@@ -326,11 +327,11 @@ async def trans_pr_comments(comments, reviews):
 
                 if translate.TRANS_MAGIC in reply_body:
                     has_translated_by_gpt = True
-                    print(f"Already translated, skip")
+                    print("Already translated, skip")
                 elif translate.already_english(reply_body):
-                    print(f"Body is already english, skip")
+                    print("Body is already english, skip")
                 else:
-                    logger.info(f"Translating...")
+                    logger.info("Translating...")
                     translator = translate.get_translator(settings.get_translator(),
                                                           max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
                     reply_body_trans, has_translated_by_gpt, real_translated = await translator.translate(reply_body)
@@ -339,7 +340,7 @@ async def trans_pr_comments(comments, reviews):
                         await github.update_pullrequest_review_comment(reply_id,
                                                                        translate.wrap_magic(reply_body_trans,
                                                                                             original_body=reply_body))
-                        logger.info(f"Updated ok")
+                        logger.info("Updated ok")
     return has_translated_by_gpt
 
 
@@ -402,3 +403,69 @@ async def batch_trans(input_url, query_filter, query_limit):
         else:
             logger.error("query_filter should be in [issue, pr, discussion]")
             return
+
+
+async def translate_text(text):
+    logger.info(f"Translating text: {text}")
+    translator = translate.get_translator(settings.get_translator(),
+                                          max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
+    translated_body, _, _ = await translator.translate(text)
+    logger.info(f"Translated text: {translated_body}")
+    return translated_body
+
+
+async def process_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        content = file.read()
+
+    comments = list(translate.extract_comments(content))
+    non_english_comments = []
+    replacements = []
+
+    for comment in comments:
+        if not translate.already_english(comment.group(2)) and not translate.is_already_translated(comment.group()):
+            non_english_comments.append(comment)
+    if not non_english_comments:
+        logger.info(f"There is no comment to translate in {file_path}")
+        return False
+    for i in range(0, len(non_english_comments), translate.BATCH_SIZE):
+        batch = non_english_comments[i:i + translate.BATCH_SIZE]
+        batch_text = "\n[|||]\n".join(comment.group(2) for comment in batch)
+        translation = await translate_text(batch_text)
+        if translation:
+            translations = translation.split("\n[|||]\n")
+            for comment, trans in zip(batch, translations):
+                indentation, original = comment.groups()
+                comment_hash = hashlib.md5(original.encode()).hexdigest()[:8]
+                trans = trans.replace("/**\n", "").replace("*/", "")
+                replacement = translate.format_translated_comment(comment.group(), trans, indentation, comment_hash)
+                replacements.append((comment.start(), comment.end(), replacement))
+
+    # 按照逆序排列替换，以保持正确的索引
+    for start, end, replacement in sorted(replacements, reverse=True):
+        content = content[:start] + replacement + content[end:]
+
+    # 验证修改后的内容
+    validation_result, error_message = translate.validate_code(content)
+    if validation_result:
+        with open(file_path, 'w', encoding='utf-8') as file:
+            file.write(content)
+        return True
+    else:
+        logger.warning(f"WARN: Code validation failed for {file_path}. Changes not saved.")
+        logger.warning(f"In file {file_path}, validation error: {error_message}")
+        return False
+
+
+async def trans_sourcecode_comments(project_path):
+    cpp_files = translate.find_cpp_files(project_path)
+    for file in cpp_files:
+        logger.info(f"Processing file: {file}")
+        try:
+            result = process_file(file)
+            if result:
+                logger.info(f"Successfully processed file: {file}")
+            else:
+                logger.warning(f"Failed to process file: {file}")
+        except Exception as e:
+            logger.exception(f"While processing {file}, error: {e}")

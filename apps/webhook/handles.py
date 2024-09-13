@@ -109,7 +109,8 @@ async def pull_request_handler(action: str, payload, event, delivery, headers):
         html_url = payload['pull_request']['html_url']
         number = payload['pull_request']['number']
         title = payload['pull_request']['title']
-        logger.info(f"Thread: {delivery}: Got a pull request #{number} {html_url} {title}")
+        body = payload['pull_request'].get('body', "")
+        logger.info(f"Thread: {delivery}: Got a pull request #{number} {html_url} {title}\n{body}")
         result = await trans.trans_pr(html_url)
     repo_name = payload["repository"]["full_name"]
     pr_number = payload["number"]
@@ -117,7 +118,8 @@ async def pull_request_handler(action: str, payload, event, delivery, headers):
     if not settings.REVIEW_MODEL.api_key:
         logger.info(f"Thread: {delivery}: No review model, skip")
         return
-    await review.review_pull_request(repo_name, pr_number, head_sha, title)
+
+    await review.review_pull_request(repo_name, pr_number, head_sha, f"{title}\n\n{body}")
 
 
 async def pull_request_review_handler(action: str, data, event, delivery, headers):

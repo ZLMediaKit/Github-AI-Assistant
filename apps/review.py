@@ -29,7 +29,7 @@ REVIEWS_FILES_EXTENSIONS = ['.py', '.go', '.java', '.js', '.ts', '.html', '.css'
                             '.cs', '.swift', '.php', '.rb', '.sh']
 
 
-def detect_language(diff: str) -> str:
+def detect_language(diff: str, file_ex: str) -> str:
     """
     基于文件扩展名或内容特征检测编程语言
     """
@@ -39,11 +39,14 @@ def detect_language(diff: str) -> str:
         '.java': 'java',
         '.cpp': 'cpp',
         '.c': 'c',
+        '.h': 'c',
         '.go': 'go',
         '.rb': 'ruby',
         '.php': 'php',
     }
 
+    if file_ex in extensions:
+        return extensions[file_ex]
     # 检查文件扩展名
     file_pattern = re.compile(r'diff --git a/.*(\.\w+)')
     match = file_pattern.search(diff)
@@ -76,6 +79,7 @@ def remove_comments(code: str, language: str) -> str:
         # 移除C风格的单行和多行注释
         code = re.sub(r'//.*', '', code)
         code = re.sub(r'/\*[\s\S]*?\*/', '', code)
+        code = re.sub(r'^[\s\+\-]*\*[^;]*$', '', code, flags=re.MULTILINE)
     elif language == 'ruby':
         # 移除Ruby的注释
         code = re.sub(r'#.*', '', code)
@@ -120,13 +124,14 @@ def parse_diff(diff: str) -> List[Tuple[str, str]]:
     return changes
 
 
-def is_significant_change(diff: str) -> bool:
+def is_significant_change(diff: str, file_file_extension: str) -> bool:
     """
     判断代码变更是否值得进行AI审核
+    :param file_file_extension:
     :param diff: 代码差异
     :return: 是否值得审核
     """
-    language = detect_language(diff)
+    language = detect_language(diff, file_file_extension)
     changes = parse_diff(diff)
 
     significant_changes = 0
@@ -140,7 +145,8 @@ def is_significant_change(diff: str) -> bool:
         new_lines = [line for line in new_code.splitlines() if line.strip()]
 
         total_changes += max(len(old_lines), len(new_lines))
-
+        if len(old_lines) == 0 and len(new_lines) == 0:
+            continue
         # 检查是否只是变量重命名
         if len(old_lines) == len(new_lines):
             rename_pattern = re.compile(r'\b(\w+)\b')
@@ -166,7 +172,7 @@ async def review_file(file_detail: dict, repo_name: str, commit_message: str, co
     if file_status not in ['added', 'modified']:
         return None
     if file_patch:
-        if not is_significant_change(file_patch):
+        if not is_significant_change(file_patch, file_extension):
             logger.info("Skip review for file %s", filename)
             return None
     logger.info(f"Review file {filename}")
@@ -224,6 +230,6 @@ async def review_specific_pr(pr_url: str):
     repo_detail = github.parse_pullrequest_url(pr_url)
     pr_data = await github.get_pullrequest(repo_detail.get_repo_fullname(), repo_detail.number)
     head_sha = pr_data['head']['sha']
-    commit_message = pr_data['title']
+    commit_message = f"{pr_data['title']}\n\n{pr_data.get('body', '')}"
     await review_pull_request(repo_detail.get_repo_fullname(), repo_detail.number, head_sha, commit_message)
 
