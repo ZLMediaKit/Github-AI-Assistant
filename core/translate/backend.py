@@ -90,13 +90,13 @@ class BaseGFMTranslator(abc.ABC):
             markdown = markdown.replace(original, translation)
         return markdown
 
-    async def translate(self, markdown: str) -> tuple[None, bool, bool] | tuple[str, bool, bool]:
+    async def translate(self, markdown: str, is_markdown=True) -> tuple[None, bool, bool] | tuple[str, bool, bool]:
         if self.check_english(markdown):
             logger.info("Already English, skip")
             return markdown, False, False
         markdown = clean_body(markdown)
         markdown = self.do_preset_translation(markdown)
-        return await self.do_translate(markdown)
+        return await self.do_translate(markdown, is_markdown)
 
     async def do_gpt_translate(self, system_prompt: str, messages: List[Dict[str, str]]) -> tuple[str, bool]:
         retry = 3
@@ -104,7 +104,7 @@ class BaseGFMTranslator(abc.ABC):
         for i in range(retry):
             try:
                 translated = await do_ai_translate(system_prompt, messages)
-                return translated, True
+                return translated, translated is not None and len(translated) > 0
             except openai.APIError as e:
                 if e.code == 'context_length_exceeded':
                     logger.error(
@@ -119,7 +119,7 @@ class BaseGFMTranslator(abc.ABC):
                     return translated, False
 
     @abc.abstractmethod
-    async def do_translate(self, markdown: str) -> tuple[None, bool, bool] | tuple[str, bool, bool]:
+    async def do_translate(self, markdown: str, is_markdown=True) -> tuple[None, bool, bool] | tuple[str, bool, bool]:
         pass
 
 
@@ -147,7 +147,7 @@ class SimpleSplitGFMTranslator(BaseGFMTranslator):
                 for sub_child in child:
                     yield from self.find_text(sub_child)
 
-    async def do_translate(self, markdown: str) -> tuple[None, bool, bool] | tuple[str, bool, bool]:
+    async def do_translate(self, markdown: str, is_markdown=True) -> tuple[None, bool, bool] | tuple[str, bool, bool]:
         src_text = markdown
         plaintext = clean_body(markdown, full=True)
         document = mistletoe.Document(plaintext)
@@ -188,15 +188,31 @@ class SimpleSplitGFMTranslator(BaseGFMTranslator):
 
 
 class AdvancedGFMTranslator(BaseGFMTranslator):
-    PROMPT_SYSTEM = "You are a professional American software engineer who is not only proficient in technology, " \
-                    "but also proficient in multiple languages. Now as a professional technical translator, " \
-                    "please translate strictly according to the user's input. " \
-                    "Please note that you only translate and do not answer, " \
-                    "and you need to keep any existing formatting or punctuation.  Do not change any formatting, " \
-                    "placeholders, or Markdown syntax. Preserve all line breaks and spacing." \
-                    "I will pay you a $1,000 tip if I am satisfied."
+    PROMPT_SYSTEM_MD = "You are a professional American software engineer who is not only proficient in technology, " \
+                       "but also proficient in multiple languages. Now as a professional technical translator, " \
+                       "please translate strictly according to the user's input. " \
+                       "Please note that you only translate and do not answer, " \
+                       "and you need to keep any existing formatting or punctuation.  Do not change any formatting, " \
+                       "placeholders, or Markdown syntax. Preserve all line breaks and spacing." \
+                       "I will pay you a $1,000 tip if I am satisfied."
+    PROMPT_SYSTEM_NOT_MD = "You are a precise American code comment translator who is proficient in multiple " \
+                           "languages. Your task is to translate extracted code comments to English. " \
+                           "Maintain the exact formatting, including any indentation or comment symbols if present. " \
+                           "Do not add or remove any symbols, or line breaks. Translate only the text within comments. " \
+                           "If the original text is already in English, please do not skip the translation and " \
+                           "directly output the original text. Finally, please note that the user input is just " \
+                           "comments extracted from the code, there is no code, you do not need to run it, you just " \
+                           "need to translate it. Therefore, there is no security issue, you cannot refuse to " \
+                           "translate for security reasons.I will pay you a $1,000 tip if I am satisfied."
 
-    async def do_translate(self, markdown: str) -> tuple[None, bool, bool] | tuple[str, bool, bool]:
+    PROMPT_USER_MD = "Translate the following GitHub Flavored Markdown text to English. Do not change any formatting, " \
+                     "placeholders, or Markdown syntax. Preserve all line breaks and spacing:"
+    PROMPT_USER_NOT_MD = "Translate the following extracted code comments to English. These comments have been " \
+                         "separated from their original code context. Preserve all formatting, including any leading " \
+                         "spaces, comment symbols, and line breaks. Only translate the text. Do not add any " \
+                         "additional text, explanations, or markdown formatting. Here are the comments to translate:"
+
+    async def do_translate(self, markdown: str, is_markdown=True) -> tuple[None, bool, bool] | tuple[str, bool, bool]:
         has_translated = False
         final_md = ""
         if TRANS_MAGIC in markdown:
@@ -204,7 +220,7 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
             return markdown, True, False
         # 检查是否为简单文本
         if self.is_simple_text(markdown):
-            final_md = await self.translate_simple_text(markdown)
+            final_md = await self.translate_simple_text(markdown, is_markdown)
             real_translated = True
             if final_md is None:
                 return None, False, False
@@ -212,7 +228,7 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
             # 对于复杂文本，使用完整的处理流程
             processed_md, extracts = self._preprocess_markdown(markdown)
             chunks = self._split_markdown(processed_md)
-            translated_chunks = await self._translate_chunks(chunks)
+            translated_chunks = await self._translate_chunks(chunks, is_markdown)
             translated_md = ''.join(translated_chunks)
             final_md = self._postprocess_markdown(translated_md, extracts)
             real_translated = True
@@ -234,17 +250,23 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
         # 检查文本长度
         return len(text.split()) < 750  # 假设平均每个token对应1.33个单词
 
-    async def translate_simple_text(self, text: str) -> str | None:
+    async def translate_simple_text(self, text: str, is_markdown: bool) -> str | None:
         prompt = "Translate the following text to English. Preserve any existing formatting or punctuation:"
-        content = f"{prompt}\n{text}"
-        messages = [{"role": "user", "content": content}]
         logger.info(f"Translating simple text:\n {text}")
-        translated, trans_success = await self.do_gpt_translate(self.PROMPT_SYSTEM, messages)
+        if is_markdown:
+            user_prompt = prompt
+            system_prompt = self.PROMPT_SYSTEM_MD
+        else:
+            user_prompt = self.PROMPT_USER_NOT_MD
+            system_prompt = self.PROMPT_SYSTEM_NOT_MD
+        content = f"{user_prompt}\n{text}"
+        messages = [{"role": "user", "content": content}]
+        translated, trans_success = await self.do_gpt_translate(system_prompt, messages)
         if not trans_success:
             logger.error("Failed to translate simple text")
             return None
         # 翻译的结果中有可能包含了prompt，需要去掉, 使用正则表达式去掉
-        translated = re.sub(rf"^{re.escape(prompt)}\n", "", translated, flags=re.MULTILINE)
+        translated = re.sub(rf"^{re.escape(user_prompt)}\n", "", translated, flags=re.MULTILINE)
         logger.info(f"Translated text:\n {translated}")
         return translated
 
@@ -326,20 +348,25 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
 
         return replace_placeholders(translated_md)
 
-    async def _translate_chunks(self, chunks: List[str]) -> List[str]:
+    async def _translate_chunks(self, chunks: List[str], is_markdown: bool) -> List[str]:
         async def translate_chunk(chunk):
-            prompt = "Translate the following GitHub Flavored Markdown text to English. Do not change any formatting, placeholders, or Markdown syntax. Preserve all line breaks and spacing:"
             logger.info(f"Translating chunk:\n {chunk}")
             if self.check_english(chunk):
                 logger.info("Already English, skip")
                 return chunk
-            content = f"{prompt}\n{chunk}"
+            if is_markdown:
+                user_prompt = self.PROMPT_USER_MD
+                system_prompt = self.PROMPT_SYSTEM_MD
+            else:
+                user_prompt = self.PROMPT_USER_NOT_MD
+                system_prompt = self.PROMPT_SYSTEM_NOT_MD
+            content = f"{user_prompt}\n{chunk}"
             messages = [{"role": "user", "content": content}]
-            translated, trans_success = await self.do_gpt_translate(self.PROMPT_SYSTEM, messages)
+            translated, trans_success = await self.do_gpt_translate(system_prompt, messages)
             if not trans_success:
                 logger.error("Failed to translate chunk")
                 return chunk
-            translated = re.sub(rf"^{re.escape(prompt)}\n", "", translated, flags=re.MULTILINE)
+            translated = re.sub(rf"^{re.escape(user_prompt)}\n", "", translated, flags=re.MULTILINE)
             logger.info(f"Translated chunk:\n {translated}")
             return translated
 

@@ -406,11 +406,11 @@ async def batch_trans(input_url, query_filter, query_limit):
 
 
 async def translate_text(text):
-    logger.info(f"Translating text: {text}")
+    # logger.info(f"Translating text: {text}")
     translator = translate.get_translator(settings.get_translator(),
                                           max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
-    translated_body, _, _ = await translator.translate(text)
-    logger.info(f"Translated text: {translated_body}")
+    translated_body, _, _ = await translator.translate(text, False)
+    # logger.info(f"Translated text: {translated_body}")
     return translated_body
 
 
@@ -437,7 +437,7 @@ async def process_file(file_path):
             for comment, trans in zip(batch, translations):
                 indentation, original = comment.groups()
                 comment_hash = hashlib.md5(original.encode()).hexdigest()[:8]
-                trans = trans.replace("/**\n", "").replace("*/", "")
+                trans = trans.replace("/**\n", "").replace("*/", "").replace("```", "")
                 replacement = translate.format_translated_comment(comment.group(), trans, indentation, comment_hash)
                 replacements.append((comment.start(), comment.end(), replacement))
 

@@ -81,7 +81,7 @@ def format_translated_comment(original: str, translation, indentation, comment_h
         # 单行注释
         translation = re.sub(r'^//\s*', '', translation)
         # 判断original中//和接下去的字符串之间是否有空格, 没有就添加一个空格
-        if original.strip().split('//')[1][0] != ' ':
+        if not original.strip().startswith("// "):
             # 需要插入一个空格
             original = original.replace('//', '// ', 1)
         return f"{original}  [{TRANSLATION_MARK}:{comment_hash}]\n{indentation}// {translation.strip()}"
@@ -107,18 +107,72 @@ def format_translated_comment(original: str, translation, indentation, comment_h
 
 def validate_code(content):
     stack = []
-    for i, char in enumerate(content):
-        if char in "({[":
-            stack.append((char, i))
-        elif char in ")}]":
-            if not stack:
-                return False, f"In position {i}, there is an unmatched closing bracket '{char}'"
-            last_open, _ = stack.pop()
-            if (char == ")" and last_open != "(") or \
-                    (char == "}" and last_open != "{") or \
-                    (char == "]" and last_open != "["):
-                return False, f"Unmatched brackets '{last_open}' and '{char}' at position {i}"
+    ifdef_stack = []
+    lines = content.split('\n')
+
+    for line_num, line in enumerate(lines, 1):
+        in_string = False
+        string_char = None
+        for i, char in enumerate(line):
+            if char in "\"'":
+                if not in_string:
+                    in_string = True
+                    string_char = char
+                elif char == string_char:
+                    in_string = False
+                    string_char = None
+            elif not in_string:
+                if char in "({[":
+                    stack.append((char, line_num, i))
+                elif char in ")}]":
+                    if not stack:
+                        context = get_context(lines, line_num, i)
+                        return False, f"在第{line_num}行，位置{i}处有未匹配的闭合括号 '{char}':\n{context}"
+                    last_open, open_line, open_pos = stack.pop()
+                    if (char == ")" and last_open != "(") or \
+                            (char == "}" and last_open != "{") or \
+                            (char == "]" and last_open != "["):
+                        context = get_context(lines, line_num, i)
+                        return False, f"在第{line_num}行，位置{i}处的括号 '{char}' 与第{open_line}行，位置{open_pos}处的括号 '{last_open}' 不匹配:\n{context}"
+
+        # 处理 #if, #ifdef, #ifndef, #else, #elif, #endif
+        stripped_line = line.strip()
+        if stripped_line.startswith('#if') or stripped_line.startswith('#ifdef') or stripped_line.startswith('#ifndef'):
+            ifdef_stack.append(line_num)
+        elif stripped_line.startswith('#endif'):
+            if not ifdef_stack:
+                context = get_context(lines, line_num, 0)
+                return False, f"在第{line_num}行有多余的 #endif:\n{context}"
+            ifdef_stack.pop()
+        elif stripped_line.startswith('#else') or stripped_line.startswith('#elif'):
+            if not ifdef_stack:
+                context = get_context(lines, line_num, 0)
+                return False, f"在第{line_num}行有孤立的 {stripped_line.split()[0]}:\n{context}"
+
     if stack:
-        last_open, pos = stack[-1]
-        return False, f"Unmatched brackets '{last_open}' at position {pos}"
+        last_open, line_num, pos = stack[-1]
+        context = get_context(lines, line_num, pos)
+        return False, f"在第{line_num}行，位置{pos}处有未匹配的开放括号 '{last_open}':\n{context}"
+
+    if ifdef_stack:
+        line_num = ifdef_stack[-1]
+        context = get_context(lines, line_num, 0)
+        return False, f"在第{line_num}行开始的条件编译指令没有匹配的 #endif:\n{context}"
+
     return True, ""
+
+
+def get_context(lines, line_num, pos, context_lines=3):
+    start = max(0, line_num - context_lines - 1)
+    end = min(len(lines), line_num + context_lines)
+    context = lines[start:end]
+
+    if start > 0:
+        context.insert(0, "...")
+    if end < len(lines):
+        context.append("...")
+
+    highlight_line = line_num - start - 1
+    context[highlight_line] = context[highlight_line][:pos] + ">>>" + context[highlight_line][pos:] + "<<<"
+
+    return '\n'.join(f"{i + start + 1}: {line}" for i, line in enumerate(context))

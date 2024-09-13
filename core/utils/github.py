@@ -367,8 +367,8 @@ async def update_discussion_comment(discussion_id, body):
 
 
 async def update_issue(issues_id, title, body, original_title=None):
-    if original_title:
-        title = f"{title}[{original_title}]"
+    # if original_title:
+    #     title = f"{title}"
     query = '''
         mutation ($id: ID!, $title:String!, $body: String!) {
           updateIssue(input: {id: $id, body: $body, title: $title}) {
@@ -385,8 +385,8 @@ async def update_issue(issues_id, title, body, original_title=None):
 
 
 async def update_discussion(discussion_id, title, body, original_title=None):
-    if original_title:
-        title = f"{title}[{original_title}]"
+    # if original_title:
+    #     title = f"{title}[{original_title}]"
     query = '''
         mutation ($id: ID!, $title: String!, $body: String!) {
           updateDiscussion(
@@ -606,8 +606,8 @@ async def create_pr_comment(repo_name: str, pr_number: int, comment_data: dict, 
 
 
 async def update_pullrequest(pr_id, title, body, original_title=None):
-    if original_title:
-        title = f"{title}[{original_title}]"
+    # if original_title:
+    #     title = f"{title}[{original_title}]"
     query = '''
         mutation ($id: ID!, $title: String!, $body: String!) {
           updatePullRequest(

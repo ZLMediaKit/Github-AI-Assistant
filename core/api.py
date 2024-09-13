@@ -75,18 +75,14 @@ You are an expert code reviewer. Your task is to review the provided code and of
    - Evaluate the quality and completeness of comments and docstrings.
    - Suggest improvements for clearer documentation.
 
-8. **Testing:**
-   - Assess the presence and quality of unit tests.
-   - Recommend additional test scenarios if needed.
-
-9. **Best Practices:**
+8. **Best Practices:**
    - Suggest use of appropriate idioms and patterns.
    - Recommend modern language features when relevant.
 
-10. **Dependencies:**
+9. **Dependencies:**
     - Review the use of external libraries and suggest alternatives if appropriate.
 
-11. **Scalability:**
+10. **Scalability:**
     - Consider how well the code would scale with increased data or users.
 
 ## Review Format
@@ -146,7 +142,7 @@ As an expert code reviewer, analyze the provided code and offer constructive fee
 2. Code Quality & Style
 3. Functionality & Logic
 4. Security & Performance
-5. Documentation & Testing
+5. Documentation
 6. Best Practices & Patterns
 7. Scalability & Maintainability
 
@@ -192,6 +188,8 @@ CONTINUED]" and wait for a prompt to continue.
 USER_PROMPT = """
 ## File Information
 - **File Name:** {filename}
+- **Project Name:** {project_name}
+- **Project Url:** {project_url}
 - **Review Type:** {review_type}
 
 ## Patch (if applicable)
@@ -280,7 +278,11 @@ async def call_gemini_api(prompt: str, messages, model: ModelSettings):
         if response.status_code != 200:
             raise Exception(f"gemini request failed, code={response.status_code}, text={response.text}")
         result_json = response.json()
-        translated = result_json["candidates"][0]['content']["parts"][0]["text"]
+        root = result_json["candidates"][0]
+        if "content" not in root and root["finishReason"] == "SAFETY":
+            logger.error("gemini response: %s", root)
+            return ""
+        translated = root['content']["parts"][0]["text"]
         lines = translated.split('\n')
         if len(lines) > 0 and 'maintain' in lines[-1] and 'markdown structure' in lines[-1]:
             translated = '\n'.join(lines[:-1])
