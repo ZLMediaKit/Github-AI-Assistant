@@ -375,8 +375,8 @@ async def batch_trans(input_url, query_filter, query_limit):
 
     repository = github.parse_repository_url(input_url)
     query_results = await github.search_issues(
-        repository["owner"],
-        repository["name"],
+        repository.owner,
+        repository.name,
         query_filter,
         "sort:comments-desc",
         [f"-label:{github.LABEL_TRANS.name}", f"-label:{github.LABEL_ENGLISH_NATIVE.name}"],
