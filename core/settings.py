@@ -60,6 +60,10 @@ def setup_github_token(token):
         raise Exception(f"{constants.ENV_GITHUB_TOKEN} is not set")
 
 
+def get_github_username():
+    return get_setting_from_cache(constants.ENV_GITHUB_USERNAME)
+
+
 def get_target_lang():
     return get_setting_from_cache(constants.ENV_TRANSLATION_TARGET_LANG, "English")
 

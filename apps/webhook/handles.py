@@ -1,5 +1,4 @@
 # -*- coding:utf-8 -*-
-
 #  Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
 #  This file is part of ZLMediaKit(https://github.com/ZLMediaKit/Github-AI-Assistant).
 #  Use of this source code is governed by MIT-like license that can be found in the
@@ -7,12 +6,128 @@
 #  may be found in the AUTHORS file in the root of the source tree.
 #
 
+import httpx
 from sanic.log import logger
 
 from apps import trans, review
 from core import translate, settings
 from core.exception import GithubGraphQLException
+from core.translate.utils import CODE_COMMENTS_SUFFIX
 from core.utils import github
+
+TRANSLATE_BRANCH_PREFIX = "translate-comments-"
+
+
+async def handle_merged_pr(repo_name, pr_number):
+    # 检查是否已经 fork 了仓库
+    if not settings.get_github_username():
+        logger.info(f"No github username, skip")
+        return
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+        # 获取PR文件
+        pr_files = await github.get_pr_files(repo_name, pr_number, client)
+        logger.info(f"Get PR files: {pr_files}")
+        is_need_translate = False
+        for file in pr_files:
+            # 暂时只支持c/c++
+            if file['filename'].endswith(CODE_COMMENTS_SUFFIX):
+                is_need_translate = True
+                break
+        if not is_need_translate:
+            return
+        repo_detail = await github.get_repo_detail(repo_name, client)
+        base_branch = repo_detail['default_branch']
+        if repo_name.split("/")[0] != settings.get_github_username():
+            is_forked = await github.is_repo_exist(settings.get_github_username(), repo_name.split("/")[1])
+            fork_name = f'{settings.get_github_username()}/{repo_name.split("/")[1]}'
+        else:
+            is_forked = True
+            fork_name = None
+        if not is_forked:
+            await github.fork_repo(repo_name, client)
+        if fork_name:
+            await github.sync_repo(fork_name, base_branch, client)
+        else:
+            fork_name = repo_name
+
+        # 创建新分支
+        new_branch = f'{TRANSLATE_BRANCH_PREFIX}pr-{pr_number}'
+        has_created_branch = False
+        translated_files = []
+        for file in pr_files:
+            if not file['filename'].endswith(CODE_COMMENTS_SUFFIX):
+                continue
+            file_content = await github.get_file_content_by_raw_url(file['raw_url'], client)
+            translated_content, translated = await trans.process_source_file(file['raw_url'], file_content)
+            if not translated_content:
+                continue
+            if not has_created_branch:
+                has_created_branch = True
+                await github.create_branch(fork_name, base_branch, new_branch, client)
+            await github.update_file(fork_name, file['filename'],
+                                     f'Translate comments in {file["filename"]}',
+                                     translated_content, new_branch, client)
+            translated_files.append(file['filename'])
+
+        if translated_files:
+            # 创建 PR
+            await github.create_pr(repo_name, new_branch, f'Translated comments for PR #{pr_number}',
+                                   f'This PR contains translated comments for the merged PR #{pr_number}',
+                                   base_branch, client)
+
+
+async def handle_merged_push(repo_name, commits):
+    if not settings.get_github_username():
+        logger.info(f"No github username, skip")
+        return
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+        is_need_translate = False
+        for commit in commits:
+            for file in commit['added'] + commit['modified']:
+                if file.endswith(CODE_COMMENTS_SUFFIX):
+                    is_need_translate = True
+                    break
+        if not is_need_translate:
+            return
+        repo_detail = await github.get_repo_detail(repo_name, client)
+        base_branch = repo_detail['default_branch']
+        # 检查是否已经 fork 了仓库
+        if repo_name.split("/")[0] != settings.get_github_username():
+            is_forked = await github.is_repo_exist(settings.get_github_username(), repo_name.split("/")[1])
+            fork_name = f'{settings.get_github_username()}/{repo_name.split("/")[1]}'
+        else:
+            is_forked = True
+            fork_name = None
+        if not is_forked:
+            await github.fork_repo(repo_name, client)
+        if fork_name:
+            await github.sync_repo(fork_name, base_branch, client)
+        else:
+            fork_name = repo_name
+        # 创建新分支
+        new_branch = f'{TRANSLATE_BRANCH_PREFIX}push-{commits[-1]["id"][:7]}'
+        has_created_branch = False
+        translated_files = []
+        for commit in commits:
+            for file in commit['added'] + commit['modified']:
+                if not file['filename'].endswith(CODE_COMMENTS_SUFFIX):
+                    continue
+                file_content = await github.get_file_content(repo_name, file, commit['id'], client)
+                translated_content, translated = await trans.process_source_file(file, file_content)
+                if not translated_content:
+                    continue
+                if not has_created_branch:
+                    has_created_branch = True
+                    await github.create_branch(fork_name, base_branch, new_branch, client)
+                await github.update_file(fork_name, file,
+                                         f'Translate comments in {file}',
+                                         translated_content, new_branch, client)
+                translated_files.append(file)
+
+        if translated_files:
+            # 创建 PR
+            await github.create_pr(repo_name, new_branch, f'Translated comments for push {commits[-1]["id"][:7]}',
+                                   f'This PR contains translated comments for the recent push', base_branch, client)
 
 
 async def issues_handler(action: str, data, event, delivery, headers):
@@ -102,6 +217,14 @@ async def discussion_comment_handler(action: str, data, event, delivery, headers
 
 
 async def pull_request_handler(action: str, payload, event, delivery, headers):
+    if action == 'closed' and payload['pull_request']['merged']:
+        repo_name = payload['repository']['full_name']
+        pr_number = payload['number']
+        try:
+            await handle_merged_pr(repo_name, pr_number)
+        except Exception as e:
+            logger.exception(f"Thread: {delivery}: Error!!! Handle merged PR failed, {e}")
+        return
     if action not in ["opened", "synchronize"]:
         logger.info(f"Thread: {delivery}: Ignore action {action}")
         return
@@ -110,7 +233,11 @@ async def pull_request_handler(action: str, payload, event, delivery, headers):
         number = payload['pull_request']['number']
         title = payload['pull_request']['title']
         body = payload['pull_request'].get('body', "")
+        head = payload['pull_request']['head']
         logger.info(f"Thread: {delivery}: Got a pull request #{number} {html_url} {title}\n{body}")
+        if head.get("ref", "").startswith(TRANSLATE_BRANCH_PREFIX):
+            logger.info(f"Thread: {delivery}: Skip translated PR")
+            return
         result = await trans.trans_pr(html_url)
     repo_name = payload["repository"]["full_name"]
     pr_number = payload["number"]
@@ -227,6 +354,10 @@ async def commit_handler(payload, event, delivery, headers):
             raise e
     else:
         logger.info(f"Thread: {delivery}: No need to translate")
+    try:
+        await handle_merged_push(repo_name, commits)
+    except Exception as e:
+        logger.exception(f"Thread: {delivery}: Error!!! Handle merged push failed, {e}")
     if not settings.REVIEW_MODEL.api_key:
         logger.info(f"Thread: {delivery}: No review model, skip")
         return

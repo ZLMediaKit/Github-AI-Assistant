@@ -14,10 +14,11 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import httpx
+import tenacity
 from pydantic import BaseModel
 
 from core import settings
-from core.exception import GithubGraphQLException
+from core.exception import GithubGraphQLException, GithubApiException
 from core.models import IssueDetail, DiscussionDetail, PullRequestDetail, Label
 
 ALLOWED_EVENTS = ['pull_request', 'pull_request_review', 'pull_request_review_comment', 'issues', 'issue_comment',
@@ -116,12 +117,12 @@ def parse_commit_comment_url(url: str) -> RepoDetail:
 
 
 async def do_post_requests(json_data):
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         response = await client.post('https://api.github.com/graphql',
                                      json=json_data,
                                      headers=get_graphql_headers())
         if response.status_code != 200:
-            raise Exception(f"request failed, code={response.status_code}")
+            raise GithubApiException(f"request failed, code={response.status_code}", response)
         result = response.json()
         if 'errors' in result:
             raise GithubGraphQLException(f"request failed, {result}", response)
@@ -129,12 +130,31 @@ async def do_post_requests(json_data):
 
 
 async def do_rest_path_requests(path, json_data):
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         response = await client.patch(get_github_rest_api_endpoint(path),
                                       json=json_data,
                                       headers=get_rest_headers())
         if response.status_code != 200:
-            raise Exception(f"request failed, code={response.status_code}, text={response.text}")
+            raise GithubApiException(f"request failed, code={response.status_code}, text={response.text}", response)
+        result = response.json()
+        return result
+
+
+async def do_rest_put_requests(path, json_data, http_client: httpx.AsyncClient = None):
+    if http_client:
+        response = await http_client.put(get_github_rest_api_endpoint(path),
+                                         json=json_data,
+                                         headers=get_rest_headers())
+        if response.status_code not in [201, 200]:
+            raise GithubApiException(f"request failed, code={response.status_code}, text={response.text}", response)
+        result = response.json()
+        return result
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        response = await client.put(get_github_rest_api_endpoint(path),
+                                    json=json_data,
+                                    headers=get_rest_headers())
+        if response.status_code not in [201, 200]:
+            raise GithubApiException(f"request failed, code={response.status_code}, text={response.text}", response)
         result = response.json()
         return result
 
@@ -144,16 +164,16 @@ async def do_rest_post_requests(path, json_data, http_client: httpx.AsyncClient 
         response = await http_client.post(get_github_rest_api_endpoint(path),
                                           json=json_data,
                                           headers=get_rest_headers())
-        if response.status_code != 201:
-            raise Exception(f"request failed, code={response.status_code}, text={response.text}")
+        if response.status_code not in [201, 200]:
+            raise GithubApiException(f"request failed, code={response.status_code}, text={response.text}", response)
         result = response.json()
         return result
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         response = await client.post(get_github_rest_api_endpoint(path),
                                      json=json_data,
                                      headers=get_rest_headers())
-        if response.status_code != 201:
-            raise Exception(f"request failed, code={response.status_code}, text={response.text}")
+        if response.status_code not in [201, 200]:
+            raise GithubApiException(f"request failed, code={response.status_code}, text={response.text}", response)
         result = response.json()
         return result
 
@@ -162,13 +182,25 @@ async def do_rest_get_requests(path, http_client: httpx.AsyncClient = None):
     if http_client:
         response = await http_client.get(get_github_rest_api_endpoint(path), headers=get_rest_headers())
         if response.status_code != 200:
-            raise Exception(f"request failed, code={response.status_code}, text={response.text}")
+            raise GithubApiException(f"request failed, code={response.status_code}, text={response.text}", response)
         return response.json()
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         response = await client.get(get_github_rest_api_endpoint(path), headers=get_rest_headers())
         if response.status_code != 200:
-            raise Exception(f"request failed, code={response.status_code}, text={response.text}")
+            raise GithubApiException(f"request failed, code={response.status_code}, text={response.text}", response)
         return response.json()
+
+
+async def is_repo_exist(owner: str, name: str) -> bool:
+    query = '''
+        query ($owner: String!, $name: String!) {
+          repository(owner: $owner, name: $name) {
+            id
+          }
+        }
+    '''
+    result = await do_post_requests({"query": query, "variables": {"owner": owner, "name": name}})
+    return 'repository' in result['data']
 
 
 async def get_commit(repo_name: str, commit_sha: str, http_client: httpx.AsyncClient = None) -> dict:
@@ -180,6 +212,34 @@ async def get_file_content(repo_name: str, file_path: str, ref: str, http_client
     path = f"/repos/{repo_name}/contents/{file_path}?ref={ref}"
     content_data = await do_rest_get_requests(path, http_client)
     return base64.b64decode(content_data['content']).decode('utf-8')
+
+
+async def get_file_content_by_raw_url(url: str, http_client: httpx.AsyncClient = None) -> str:
+    if http_client:
+        response = await http_client.get(url)
+        if response.status_code != 200:
+            raise GithubApiException(f"request failed, code={response.status_code}, text={response.text}", response)
+        return response.text
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        response = await client.get(url)
+        if response.status_code != 200:
+            raise GithubApiException(f"request failed, code={response.status_code}, text={response.text}", response)
+        return response.text
+
+
+@tenacity.retry(
+    retry=tenacity.retry_if_exception_type(GithubApiException),
+    wait=tenacity.wait_fixed(5), stop=tenacity.stop_after_attempt(3))
+async def update_file(repo_name, file_path, commit_message, content, branch, http_client: httpx.AsyncClient = None):
+    current_file = await do_rest_get_requests(f"/repos/{repo_name}/contents/{file_path}?ref={branch}", http_client)
+    if 'sha' not in current_file:
+        raise Exception(f"file not found, {current_file}")
+    return await do_rest_put_requests(f"/repos/{repo_name}/contents/{file_path}", {
+        'message': commit_message,
+        'content': base64.b64encode(content.encode('utf-8')).decode('utf-8'),
+        'sha': current_file['sha'],
+        'branch': branch
+    })
 
 
 async def get_pr_files(repo_name: str, pr_number: int, http_client: httpx.AsyncClient = None) -> list:
@@ -605,6 +665,18 @@ async def create_pr_comment(repo_name: str, pr_number: int, comment_data: dict, 
     return await do_rest_post_requests(path, comment_data, http_client)
 
 
+async def create_pr(repo_name: str, head: str, title: str, body: str, branch: str,
+                    http_client: httpx.AsyncClient = None):
+    path = f"/repos/{repo_name}/pulls"
+    data = {
+        'title': title,
+        'body': body,
+        'head': f'{settings.get_github_username()}:{head}',
+        'base': branch
+    }
+    return await do_rest_post_requests(path, data, http_client)
+
+
 async def update_pullrequest(pr_id, title, body, original_title=None):
     # if original_title:
     #     title = f"{title}[{original_title}]"
@@ -758,6 +830,11 @@ async def get_repo_id(owner: str, name: str) -> str:
     return result['data']['repository']['id']
 
 
+async def get_repo_detail(repo_name: str, http_client: httpx.AsyncClient = None):
+    path = f"/repos/{repo_name}"
+    return await do_rest_get_requests(path, http_client)
+
+
 async def create_label_with_repo_details(owner: str, name: str, label: Label) -> str:
     repo_id = await get_repo_id(owner, name)
     result = await create_label(repo_id, label.name, label.color, label.description)
@@ -816,3 +893,26 @@ def verify_signature(payload_body, secret_token, signature_header):
     expected_signature = "sha256=" + hash_object.hexdigest()
     if not hmac.compare_digest(expected_signature, signature_header):
         raise Exception("Request signatures didn't match!")
+
+
+async def fork_repo(repo_name, http_client: httpx.AsyncClient = None):
+    path = f"/repos/{repo_name}/forks"
+    return await do_rest_post_requests(path, {}, http_client)
+
+
+async def sync_repo(repo_name, branch: str, http_client: httpx.AsyncClient = None):
+    path = f"/repos/{repo_name}/merge-upstream"
+    return await do_rest_post_requests(path, {"branch": branch}, http_client)
+
+
+async def create_branch(repo_name, base_branch, new_branch, http_client: httpx.AsyncClient = None):
+    base_ref = await do_rest_get_requests(f'/repos/{repo_name}/git/ref/heads/{base_branch}', http_client)
+    try:
+        return await do_rest_post_requests(f'/repos/{repo_name}/git/refs', {
+            'ref': f'refs/heads/{new_branch}',
+            'sha': base_ref['object']['sha']
+        }, http_client)
+    except GithubApiException as e:
+        if e.response.status_code == 422:
+            return
+        raise e

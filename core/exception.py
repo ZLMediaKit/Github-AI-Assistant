@@ -30,3 +30,11 @@ class GithubGraphQLException(Exception):
                 if error['type'] == 'UNPROCESSABLE':
                     return True
         return False
+
+
+class GithubApiException(Exception):
+    def __init__(self, message, response):
+        super().__init__(message)
+        self.response = response
+        self.error_code = -1
+        self.error_message = None

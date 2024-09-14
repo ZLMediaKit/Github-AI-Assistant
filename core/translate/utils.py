@@ -17,6 +17,7 @@ TRANSLATION_MARK = "AUTO-TRANSLATED"
 
 # 每次API调用翻译的注释数量
 BATCH_SIZE = 30
+CODE_COMMENTS_SUFFIX = ('.cpp', '.h', '.c', '.hpp')
 
 
 def already_english(string):
@@ -61,7 +62,7 @@ def find_cpp_files(directory):
     cpp_files = []
     for root, _, files in os.walk(directory):
         for file in files:
-            if file.endswith(('.cpp', '.h', '.c')):
+            if file.endswith(CODE_COMMENTS_SUFFIX):
                 cpp_files.append(os.path.join(root, file))
     return cpp_files
 

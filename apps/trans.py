@@ -414,11 +414,8 @@ async def translate_text(text):
     return translated_body
 
 
-async def process_file(file_path):
-    with open(file_path, 'r', encoding='utf-8') as file:
-        content = file.read()
-
-    comments = list(translate.extract_comments(content))
+async def process_source_file(file_path: str, file_content: str) -> (str, bool):
+    comments = list(translate.extract_comments(file_content))
     non_english_comments = []
     replacements = []
 
@@ -427,7 +424,7 @@ async def process_file(file_path):
             non_english_comments.append(comment)
     if not non_english_comments:
         logger.info(f"There is no comment to translate in {file_path}")
-        return False
+        return None, False
     for i in range(0, len(non_english_comments), translate.BATCH_SIZE):
         batch = non_english_comments[i:i + translate.BATCH_SIZE]
         batch_text = "\n[|||]\n".join(comment.group(2) for comment in batch)
@@ -443,18 +440,16 @@ async def process_file(file_path):
 
     # 按照逆序排列替换，以保持正确的索引
     for start, end, replacement in sorted(replacements, reverse=True):
-        content = content[:start] + replacement + content[end:]
+        file_content = file_content[:start] + replacement + file_content[end:]
 
     # 验证修改后的内容
-    validation_result, error_message = translate.validate_code(content)
+    validation_result, error_message = translate.validate_code(file_content)
     if validation_result:
-        with open(file_path, 'w', encoding='utf-8') as file:
-            file.write(content)
-        return True
+        return file_content, True
     else:
         logger.warning(f"WARN: Code validation failed for {file_path}. Changes not saved.")
         logger.warning(f"In file {file_path}, validation error: {error_message}")
-        return False
+        return None, False
 
 
 async def trans_sourcecode_comments(project_path):
@@ -462,10 +457,14 @@ async def trans_sourcecode_comments(project_path):
     for file in cpp_files:
         logger.info(f"Processing file: {file}")
         try:
-            result = await process_file(file)
-            if result:
+            with open(file, 'r', encoding='utf-8') as f:
+                file_content = f.read()
+            file_content, translated = await process_source_file(file, file_content)
+            if file_content:
                 logger.info(f"Successfully processed file: {file}")
             else:
                 logger.warning(f"Failed to process file: {file}")
+            with open(file, 'w', encoding='utf-8') as f:
+                file.write(file_content)
         except Exception as e:
             logger.exception(f"While processing {file}, error: {e}")

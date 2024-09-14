@@ -35,6 +35,10 @@ def update_env():
                                   default=env.get_env(constants.ENV_GITHUB_TOKEN))
     env.update_env(constants.ENV_GITHUB_TOKEN, github_token_ask)
 
+    github_username_ask = Prompt.ask("Please input your github username",
+                                     console=console,
+                                     default=env.get_env(constants.ENV_GITHUB_USERNAME))
+    env.update_env(constants.ENV_GITHUB_USERNAME, github_username_ask)
     secret_key_ask = Prompt.ask("Please input your github webhook secret key",
                                 console=console,
                                 default=env.get_env(constants.ENV_SECRET_KEY))
