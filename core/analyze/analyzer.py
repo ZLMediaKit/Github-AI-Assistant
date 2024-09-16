@@ -82,9 +82,9 @@ class CodeElementAnalyzer(ABC):
             if actual_path:
                 # rel_path = os.path.relpath(actual_path, self.project_root)
                 project_dependencies.append(actual_path)
-            else:
-                # 对于找不到的文件，我们仍然记录它，但实际路径为None
-                print(f"Warning: Cannot find file {include} in project")
+            # else:
+            #     # 对于找不到的文件，我们仍然记录它，但实际路径为None
+            #     print(f"Warning: Cannot find file {include} in project")
 
         return project_dependencies
 

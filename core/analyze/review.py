@@ -278,7 +278,7 @@ async def do_ai_review(filename: str, commit_message: str, file_status: str,
         project_url = ""
     if CodeAnalyzer.can_use(repo_name):
         try:
-            analyzer = CodeAnalyzer(repo_name)
+            analyzer = CodeAnalyzer(repo_name, settings.get_milvus_uri())
             context = await analyzer.get_review_context(filename, file_patch)
             related_context = context.get("context_info", "")
             if related_context:

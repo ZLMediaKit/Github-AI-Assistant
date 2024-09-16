@@ -354,7 +354,7 @@ def make_project_index(repo_url: Annotated[str, typer.Option(
     setup_result = settings.setup_review_env(github_token, model_name, api_url, api_key, proxy_url)
     if not setup_result:
         return
-    analyzer = CodeAnalyzer(repo_url)
+    analyzer = CodeAnalyzer(repo_url, settings.get_milvus_uri())
     if exclude_dirs:
         exclude_dirs = exclude_dirs.split(",")
     asyncio.run(analyzer.make_full_index(exclude_dirs))
