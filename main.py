@@ -56,10 +56,10 @@ def install_panel():
         system.install_requirements(progress, os.path.join(BASE_PATH, "requirements.txt"))
         progress.advance(task)
     console.print("Installed Done!")
-    setup.update_env()
-    console.print("Update .env file success", style="bold green")
     with open(installed_flag_file, "w") as f:
         f.write(requirements_hash)
+    setup.update_env()
+    console.print("Update .env file success", style="bold green")
 
 
 @app.command("shell", help="Activate the virtual environment")
