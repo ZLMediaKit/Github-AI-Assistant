@@ -6,8 +6,6 @@ Your best AI assistant for GitHub repositories, it not only helps you automatica
 
 [中文](README_zh.md)
 
-## Acknowledgements
-This project references and utilizes some code from the [ossrs/discussion-translation](https://github.com/ossrs/issues-translation) project. Special thanks to the original author for their work.
 
 ## Features
 - [x] Automatically translate specified issues/discussions/PRs/commits to English or a designated language

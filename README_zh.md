@@ -7,8 +7,6 @@
 
 [English](README.md)
 
-## 感谢
-本项目参考并使用了[ossrs/discussion-translation](https://github.com/ossrs/issues-translation)项目的部分代码,感谢原作者的工作.
 
 ## 特性
 - [x] 自动翻译指定的issues/discussions/pr/commit为英文或指定语言
