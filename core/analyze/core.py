@@ -13,6 +13,7 @@
 __author__ = 'alex'
 
 import asyncio
+import gc
 import glob
 import json
 import os
@@ -49,35 +50,24 @@ class EmbeddingModel:
 
     def load(self):
         with self.lock:
-            local_files_only = True
-            logger.info(f"Loading embedding model from {settings.get_embedding_model()}, it may take a few minutes.")
-            # 查找模型是否本地存在
-            model_name = f'models--{settings.get_embedding_model().replace("/", "--")}'
-            if not os.path.exists(os.path.join(settings.BASE_PATH, './cache', model_name)):
-                logger.error(f"Model {settings.get_embedding_model()} not found in the cache directory.")
-                local_files_only = False
-            # Load ONNX model for embeddings
-            self.embedding_model = TextEmbedding(model_name=settings.get_embedding_model(),
-                                                 cache_dir=os.path.join(settings.BASE_PATH, './cache'),
-                                                 local_files_only=local_files_only)
+            if self.embedding_model is None:
+                local_files_only = True
+                logger.info(f"Loading embedding model from {settings.get_embedding_model()}, it may take a few minutes.")
+                model_name = f'models--{settings.get_embedding_model().replace("/", "--")}'
+                cache_dir = os.path.join(settings.BASE_PATH, './cache')
 
-    # def encode_text(self, text: str) -> np.ndarray:
-    #     """使用ONNX模型对文本进行编码"""
-    #     # 这里假设模型接受的输入名为'input'，输出名为'output'
-    #     # 您可能需要根据实际模型调整这些名称
-    #     model_input = self.tokenize(text)
-    #     model_output = self.embedding_model.run(['output'], {'input': model_input})[0]
-    #     return model_output[0]  # 假设输出是批量的，我们只取第一个
-    #
-    # def tokenize(self, text: str) -> np.ndarray:
-    #     """将文本转换为模型输入的格式"""
-    #     # 这里需要根据您的模型实现具体的tokenization逻辑
-    #     # 这只是一个简单的示例，您可能需要使用更复杂的tokenizer
-    #     tokens = text.split()[:512]  # 简单的按空格分割，并限制长度
-    #     return np.array([tokens])
+                if not os.path.exists(os.path.join(cache_dir, model_name)):
+                    logger.error(f"Model {settings.get_embedding_model()} not found in the cache directory.")
+                    local_files_only = False
+
+                self.embedding_model = TextEmbedding(
+                    model_name=settings.get_embedding_model(),
+                    cache_dir=cache_dir,
+                    local_files_only=local_files_only
+                )
 
     def get_model(self) -> TextEmbedding:
-        if not self.embedding_model:
+        if self.embedding_model is None:
             self.load()
         return self.embedding_model
 
@@ -90,26 +80,37 @@ class EmbeddingModel:
         """
         根据文本大小自适应地选择处理方式
         """
-        if len(text.split()) <= chunk_size:
-            # 对于小文本，直接处理
-            embeddings = self.get_model().embed([text])
-            return next(embeddings)
-        else:
-            # 对于大文本，分块处理
-            chunks = self.chunk_text(text, chunk_size)
-            embeddings = self.get_model().embed(chunks)
-            return np.mean([next(embeddings) for _ in chunks], axis=0)
+        try:
+            model = self.get_model()
+            if len(text.split()) <= chunk_size:
+                embeddings = next(model.embed([text]))
+                return embeddings
+            else:
+                chunks = self.chunk_text(text, chunk_size)
+                embeddings = []
+                for chunk in chunks:
+                    chunk_embedding = next(model.embed([chunk]))
+                    embeddings.append(chunk_embedding)
+                    gc.collect()  # Force garbage collection after each chunk
+                return np.mean(embeddings, axis=0)
+        except Exception as e:
+            logger.error(f"Failed to encode text: {e}")
+            return np.zeros(model.dim)  # Use the dimension from the model
 
     def encode_large_document(self, document: str, chunk_size: int = 1000) -> Generator[np.ndarray, None, None]:
-        """分块处理大型文档并生成嵌入"""
         chunks = self.chunk_text(document, chunk_size)
         for chunk in chunks:
-            yield self.encode_text(chunk)
+            yield self.encode_text(chunk, chunk_size)
+            gc.collect()  # Force garbage collection after each chunk
 
     def process_large_document(self, document: str, chunk_size: int = 1000) -> np.ndarray:
-        """处理大型文档并返回平均嵌入"""
-        embeddings = list(self.encode_large_document(document, chunk_size))
-        return np.mean(embeddings, axis=0)
+        embeddings = []
+        for embedding in self.encode_large_document(document, chunk_size):
+            embeddings.append(embedding)
+        result = np.mean(embeddings, axis=0)
+        del embeddings
+        gc.collect()
+        return result
 
 
 embedding_model = EmbeddingModel()
@@ -154,12 +155,16 @@ class CodeAnalyzer:
         """
         连接到 Milvus 数据库，支持独立版本和嵌入式模式
         """
-        if not self.code_elements_collection:
-            async with self.init_lock:
-                if not self.code_elements_collection:
-                    self.code_elements_collection = await self.get_or_create_code_elements_collection()
+        try:
+            if not self.code_elements_collection:
+                async with self.init_lock:
+                    if not self.code_elements_collection:
+                        self.code_elements_collection = await self.get_or_create_code_elements_collection()
+                return await milvus_manager.get_client(self.code_elements_collection)
             return await milvus_manager.get_client(self.code_elements_collection)
-        return await milvus_manager.get_client(self.code_elements_collection)
+        except Exception as e:
+            logger.error(f"Failed to connect to Milvus: {e}")
+            raise e
 
     async def get_or_create_code_elements_collection(self):
         """
@@ -379,10 +384,9 @@ class CodeAnalyzer:
         try:
             client = await self.get_milvus_client()
             # 删除此文件的旧向量
-            client.delete(
-                collection_name=self.code_elements_collection,
-                filter=f"file_path == '{file_detail.file_name}'"
-            )
+            client.delete(collection_name=self.code_elements_collection,
+                          filter=f"file_path == '{file_detail.file_name}'"
+                          )
             # 插入新向量
             data = []
             # if len(file_detail.code_elements) > 60:
@@ -393,7 +397,7 @@ class CodeAnalyzer:
                     continue
                 if f'{element["type"]}_{element["name"]}' in added_set:
                     continue
-                embedding = embedding_model.encode_text(element['content'])
+                embedding = embedding_model.encode_text(element['element_name'])
                 data.append({
                     "file_path": file_detail.file_name,
                     "language": file_detail.language,
@@ -403,10 +407,7 @@ class CodeAnalyzer:
                     "embedding": embedding.tolist()
                 })
 
-            client.insert(
-                collection_name=self.code_elements_collection,
-                data=data
-            )
+            client.insert(collection_name=self.code_elements_collection, data=data)
         except Exception as e:
             logger.error(f"Failed to save file details to the database: {e}", exc_info=True, stack_info=True)
 
@@ -428,6 +429,7 @@ class CodeAnalyzer:
         获取数据库中的元素数量
         """
         client = await self.get_milvus_client()
+
         return client.get_collection_stats(self.code_elements_collection)["row_count"]
 
     async def generate_project_summary(self, summary: Dict) -> Dict[str, Any]:
