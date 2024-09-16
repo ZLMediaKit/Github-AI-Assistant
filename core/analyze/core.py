@@ -167,6 +167,7 @@ class CodeAnalyzer:
         """
         collection_name = f"code_elements_{self.repo_fullname.replace('/', '_').lower()}"
         if self.milvus_client.has_collection(collection_name):
+            self.milvus_client.load_collection(collection_name)
             return collection_name
 
         fields = [
@@ -204,6 +205,7 @@ class CodeAnalyzer:
             # 删除集合
             self.milvus_client.drop_collection(collection_name)
             raise e
+        self.milvus_client.load_collection(collection_name)
         return collection_name
 
     def get_code_files(self) -> List[str]:
