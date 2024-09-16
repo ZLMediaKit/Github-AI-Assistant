@@ -2,14 +2,12 @@
 
 [![GitHub issues](https://img.shields.io/github/issues/ZLMediaKit/Github-AI-Assistant)]
 
-The best AI assistant for your Github repository, it can not only help you automatically translate issues/discussions/pr/commit to the specified language, but also help you with code review, automatic code repair and other functions through AI models.
+Your best AI assistant for GitHub repositories, it not only helps you automatically translate issues/discussions/PRs/commits into the specified language, but also performs code review and automatic code fixes by vectorizing the entire project to generate detailed context and submitting it to the AI, similar to the implementation of [cursor](https://www.cursor.com/).
 
 [中文](README_zh.md)
 
 ## Acknowledgements
 This project references and utilizes some code from the [ossrs/discussion-translation](https://github.com/ossrs/issues-translation) project. Special thanks to the original author for their work.
-
-Here's the English translation of the content, maintaining the original format:
 
 ## Features
 - [x] Automatically translate specified issues/discussions/PRs/commits to English or a designated language
@@ -21,7 +19,8 @@ Here's the English translation of the content, maintaining the original format:
 - [x] Support for pre-translation by modifying JSON files in the data directory
 - [x] Use of asynchronous coroutines for translation to improve efficiency
 - [x] Provide two translation backends, with options to use sentence splitting translation or direct translation, and the ability to extend translation backends
-- [x] Support for manual or webhook-triggered automatic code review of submitted PRs or commits, providing suggestions for fixes and optimizations, for example: [here](https://github.com/ZLMediaKit/translation_issues/commit/b338d03ec3fe0d574d709b653e800871dde249ba#commitcomment-146555343)
+- [x] Support for manual or webhook-triggered automatic code review of submitted PRs or commits, providing suggestions for fixes and optimizations, for example: [here](https://github.com/ZLMediaKit/ZLToolKit/pull/246)
+- [x] **Supports code review based on code tree segmentation and vectorization, similar to the implementation of [cursor](https://www.cursor.com/). By providing the AI with sufficient context, it can offer more accurate code review and fix suggestions.**
 
 ## Deployment
 
@@ -134,3 +133,28 @@ Start the GitHub webhook server:
 After enabling the webhook server, you need to configure a webhook in GitHub. Please refer to [this guide](https://docs.github.com/en/developers/webhooks-and-events/webhooks/creating-webhooks) for configuration.
 
 The Payload URL for the webhook is: http://your-ip:port/api/v1/hooks
+
+## How to Enable Code Review Based on Code Tree Segmentation and Vectorization
+
+Currently, only Python and C/C++ code reviews are supported. If you need to review code in other languages, please extend the `CodeElementAnalyzer` class.
+
+The current embedding model used is `jinaai/jina-embeddings-v2-base-code`, but you can choose other models according to your needs.
+
+The current vector database used is `milvus/milvus`, but you can choose other databases according to your needs.
+
+You can edit the `EMBEDDING_MODEL` and `MILVUS_URI` in the `.env` file to select your model and database.
+
+```plaintext
+EMBEDDING_MODEL=jinaai/jina-embeddings-v2-base-code
+MILVUS_URI=milvus://
+```
+
+Then, you need to vectorize the codebase and build the index:
+
+```bash
+./run make_project_index --repo-url https://github.com/ZLMediaKit/ZLToolKit    
+```
+
+Once the project is vectorized and the index is built, code reviews will prioritize using the vectorized method. Other functionalities remain the same as regular code reviews, without any modifications needed.
+
+However, please note that if it is for testing purposes, you do not need to set `MILVUS_URI` in the `.env` file, as it will automatically use the lite version of the vector database. For production environments, you must deploy the Milvus database and set `MILVUS_URI`.

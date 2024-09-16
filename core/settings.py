@@ -104,6 +104,14 @@ def get_api_limiter(key: str):
     return API_LIMITER.get_limiter(key)
 
 
+def get_embedding_model():
+    return get_setting_from_cache(constants.ENV_EMBEDDING_MODEL, "jinaai/jina-embeddings-v2-base-code")
+
+
+def get_milvus_uri():
+    return get_setting_from_cache(constants.ENV_MILVUS_URI, os.path.join(BASE_PATH, './data/milvus.db'))
+
+
 def init_translation_model(need_model=False):
     translation_model = get_setting_from_cache(constants.ENV_TRANSLATION_MODEL, "gemini/gemini-1.5-flash")
     model_info = MODELS.get(translation_model, None)

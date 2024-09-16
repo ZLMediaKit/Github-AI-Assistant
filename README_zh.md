@@ -3,7 +3,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/ZLMediaKit/Github-AI-Assistant)]
 
 您Github存储库的最佳AI助手, 它不但可以帮助您自动翻译issues/discussions/pr/commit到指定语言, 
-还可以通过AI模型帮助您进行代码审查, 代码自动修复等功能.
+还可以通过类似于[cursor](https://www.cursor.com/)的实现方式, 通过对整个项目向量化后生成详尽的上下文并提交给AI来进行代码审查, 代码自动修复等功能.
 
 [English](README.md)
 
@@ -20,7 +20,8 @@
 - [x] 支持预翻译, 可以通过修改data目录中的json文件进行预翻译
 - [x] 使用异步协程进行翻译, 提高翻译效率
 - [x] 提供两种翻译后端, 可以选择使用切分语句翻译或者直接翻译, 也可以自己扩展翻译后端
-- [x] 支持手动或者通过webhook自动对提交的pr或者commit进行代码审查并提供修复优化建议,例如:[这里](https://github.com/ZLMediaKit/translation_issues/commit/b338d03ec3fe0d574d709b653e800871dde249ba#commitcomment-146555343)
+- [x] 支持手动或者通过webhook自动对提交的pr或者commit进行代码审查并提供修复优化建议,例如:[这里](https://github.com/ZLMediaKit/ZLToolKit/pull/246#discussion_r1760667617)
+- [x] **支持基于代码树分割并向量化的方式进行代码审查, 类似于[cursor](https://www.cursor.com/)的实现. 由于可以提供AI足够的上下文, 因此可以提供更加准确的代码审查和修复建议.**
 
 ## 部署
 
@@ -133,4 +134,32 @@ sudo ./run.sh auto_start
 启用webhook服务器后, 您需要在GitHub中配置webhook, 请参考[这里](https://docs.github.com/en/developers/webhooks-and-events/webhooks/creating-webhooks)进行配置.
 
 webhook的Payload URL为: http://your-ip:port/api/v1/hooks
+
+
+## 如何启用基于代码树分割并向量化的代码审查功能
+
+目前只支持python和c/c++代码的审查, 如果您需要审查其他语言的代码, 请继承CodeElementAnalyzer类并自行扩展.
+
+目前使用的嵌入式模型是jinaai/jina-embeddings-v2-base-code, 你可以根据自己的需求选择其他模型.
+
+目前使用的向量数据库是milvus/milvus, 你可以根据自己的需求选择其他数据库.
+
+您可以编辑.env文件中的EMBEDDING_MODEL和MILVUS_URI来选择自己的模型和数据库.
+
+```allykeynamelanguage
+EMBEDDING_MODEL=jinaai/jina-embeddings-v2-base-code
+MILVUS_URI=milvus://
+```
+
+然后您需要先对代码库进行向量化和建立索引:
+
+```bash
+./run make_project_index --repo-url https://github.com/ZLMediaKit/ZLToolKit    
+```
+
+项目向量化和索引建立完成后, 将会优先使用向量化的方式进行代码审查.
+其他功能和普通的代码审查一样, 不需要任何改动.
+
+但是需要注意, 如果是测试使用那么不需要在.env中设置MILVUS_URI, 将会自动使用lite方式的向量数据库.
+如果是生产环境, 则一定要部署milvus数据库并设置MILVUS_URI.
 

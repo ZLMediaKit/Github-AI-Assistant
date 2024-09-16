@@ -5,16 +5,17 @@
 #  LICENSE file in the root of the source tree. All contributing project authors
 #  may be found in the AUTHORS file in the root of the source tree.
 #
-#
-import logging
+"""
+@author:alex
+@date:2024/9/16
+@time:上午3:39
+"""
+__author__ = 'alex'
 
-import httpx
-import tenacity
-from openai import AsyncClient
+import json
 
-from core import settings
-from core.log import logger
-from core.models import ModelSettings
+from core import settings, llm
+from core.analyze.core import CodeAnalyzer
 
 REVIEW_PROMPT_FULL = """
 You are an expert code reviewer. Your task is to review the provided code and offer constructive, detailed feedback. The review process differs based on whether the submission is a patch to an existing file or a new file.
@@ -213,127 +214,45 @@ USER_PROMPT = """
 Please review the above code according to the provided guidelines. Focus on [specific areas if any] and provide detailed feedback on code quality, functionality, security, and best practices.
 """
 
+USER_PROMPT_FULL = """
+## File Information
+- **File Name:** {filename}
+- **Project Name:** {project_name}
+- **Project Url:** {project_url}
+- **Review Type:** {review_type}
 
-@tenacity.retry(
-    retry=tenacity.retry_if_exception_type(Exception),
-    wait=tenacity.wait_exponential(multiplier=1, min=2, max=5),
-    stop=tenacity.stop_after_attempt(3),
-    before_sleep=tenacity.before_sleep_log(logger, logging.INFO)
-)
-async def call_gemini_api(prompt: str, messages, model: ModelSettings):
-    """
-    call google gemini api
-    :param model:
-    :param prompt:
-    :param messages:
-    :return:
-    """
-    gemini_key = model.api_key
-    gemini_model = model.model_name
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={gemini_key}"
-    data = {
-        "system_instruction": {
-            "parts": {"text": prompt}
-        },
-        "contents": [
-            {
-                "parts": []
-            }
-        ],
-        "generationConfig": {
-            "temperature": 0,
-            "topK": 1,
-            "topP": 1,
-            "maxOutputTokens": 8192,
-            "stopSequences": []
-        },
-        "safetySettings": [
-            {
-                "category": "HARM_CATEGORY_HARASSMENT",
-                "threshold": "BLOCK_ONLY_HIGH"
-            },
-            {
-                "category": "HARM_CATEGORY_HATE_SPEECH",
-                "threshold": "BLOCK_ONLY_HIGH"
-            },
-            {
-                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                "threshold": "BLOCK_ONLY_HIGH"
-            },
-            {
-                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                "threshold": "BLOCK_ONLY_HIGH"
-            }
-        ]
-    }
-    # data["contents"][0]["parts"].insert(0, {"text": f"input: {prompt}"})
-    for message in messages:
-        data["contents"][0]["parts"].append({"text": f"input: {message['content']}"})
+## Project Overview
 
-    headers = {
-        "Content-Type": "application/json",
-    }
-    async with httpx.AsyncClient(proxy=settings.get_proxy_url()) as client:
-        response = await client.post(url, headers=headers, json=data, timeout=30)
-        if response.status_code != 200:
-            raise Exception(f"gemini request failed, code={response.status_code}, text={response.text}")
-        result_json = response.json()
-        root = result_json["candidates"][0]
-        if "content" not in root and root["finishReason"] == "SAFETY":
-            logger.error("gemini response: %s", root)
-            return ""
-        translated = root['content']["parts"][0]["text"]
-        lines = translated.split('\n')
-        if len(lines) > 0 and 'maintain' in lines[-1] and 'markdown structure' in lines[-1]:
-            translated = '\n'.join(lines[:-1])
-        return translated
+{project_overview}
 
+## Patch (if applicable)
+[PATCH_START]
+```diff
+{patch_code}
+```
+[PATCH_END]
 
-async def call_openai_api(prompt: str, messages, model: ModelSettings, api_base_url=None, temperature: float = 0):
-    """
-    call openai api
-    :param temperature:
-    :param api_base_url:
-    :param model:
-    :param prompt:
-    :param messages:
-    :return:
-    """
-    prompts = messages.copy()
-    if prompt is not None:
-        prompts.insert(0, {"role": "system", "content": prompt})
-    if not api_base_url:
-        api_base_url = model.api_url
-    client = AsyncClient(
-        api_key=model.api_key,
-        base_url=api_base_url,
-        http_client=httpx.AsyncClient(timeout=30, proxy=settings.get_proxy_url())
-    )
-    completion = await client.chat.completions.create(model=model.model_name, messages=prompts, temperature=temperature)
-    translated = completion.choices[0].message.content.strip('\'"')
-    lines = translated.split('\n')
-    if len(lines) > 0 and 'maintain' in lines[-1] and 'markdown structure' in lines[-1]:
-        translated = '\n'.join(lines[:-1])
-    return translated
+## Full File Content
+```
+{full_code}
+```
 
+## Purpose of Changes (optional)
 
-async def _call_ai_api(prompt: str, messages, model: ModelSettings):
-    await settings.get_api_limiter(model.api_key).acquire()
-    if model.provider == 'openai':
-        return await call_openai_api(prompt, messages, model)
-    elif model.provider == 'gemini':
-        return await call_gemini_api(prompt, messages, model)
-    elif model.provider == 'groq':
-        return await call_openai_api(prompt, messages, model, "https://api.groq.com/openai/v1", 0.1)
-    elif model.provider == 'openai_like':
-        return await call_openai_api(prompt, messages, model, None, 0.1)
-    else:
-        raise Exception(f"unknown provider {model.provider}")
+{commit_message}
 
+## Related context information (optional):
 
-async def do_ai_translate(system_prompt: str, messages):
-    translated = await _call_ai_api(system_prompt, messages, settings.TRANSLATION_MODEL)
-    return translated
+{related_context}
+
+## Patch dependencies (optional):
+
+{patch_dependencies}
+
+---
+
+Please review the above code according to the provided guidelines. Focus on [specific areas if any] and provide detailed feedback on code quality, functionality, security, and best practices.
+"""
 
 
 async def do_ai_review(filename: str, commit_message: str, file_status: str,
@@ -356,20 +275,41 @@ async def do_ai_review(filename: str, commit_message: str, file_status: str,
     else:
         project_name = ""
         project_url = ""
-    messages = [{"role": "user", "content": USER_PROMPT.format(
-        full_code=code_content,
-        filename=filename,
-        review_type=review_type,
-        commit_message=commit_message,
-        project_url=project_url,
-        project_name=project_name,
-        patch_code=file_patch)}]
+    if CodeAnalyzer.can_use(repo_name):
+        analyzer = CodeAnalyzer(repo_name)
+        context = await analyzer.get_review_context(filename, file_patch)
+        related_context = context.get("context_info", "")
+        if related_context:
+            related_context = json.dumps(related_context, indent=2, ensure_ascii=False)
+        dependencies = context.get("dependencies", "")
+        if dependencies:
+            dependencies = json.dumps(dependencies, indent=2, ensure_ascii=False)
+        messages = [{"role": "user", "content": USER_PROMPT_FULL.format(
+            full_code=code_content,
+            filename=filename,
+            review_type=review_type,
+            commit_message=commit_message,
+            project_url=project_url,
+            project_name=project_name,
+            patch_code=file_patch,
+            project_overview=context.get("overview", ""),
+            related_context=related_context,
+            patch_dependencies=dependencies)}]
+    else:
+        messages = [{"role": "user", "content": USER_PROMPT.format(
+            full_code=code_content,
+            filename=filename,
+            review_type=review_type,
+            commit_message=commit_message,
+            project_url=project_url,
+            project_name=project_name,
+            patch_code=file_patch)}]
     system_prompt = REVIEW_PROMPT_FULL.format(max_tokens=settings.REVIEW_MODEL.max_output_tokens)
 
     full_response = ""
 
     while True:
-        chunk = await _call_ai_api(system_prompt, messages, settings.REVIEW_MODEL)
+        chunk = await llm.call_ai_api(system_prompt, messages, settings.REVIEW_MODEL, 0.2, 40, 0.85)
 
         full_response += chunk.strip()
 

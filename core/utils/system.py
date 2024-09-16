@@ -52,6 +52,23 @@ def run_cmd(cmd, assert_success=False, capture_output=False, env=None):
     return result
 
 
+def install_requirements(progress, requirements_file="./requirements.txt"):
+    """
+    Install requirements
+    :param requirements_file:
+    :param progress:
+    :return:
+    """
+    progress.console.print("Installing requirements", style="bold green")
+    try:
+        run_cmd(f"pip3 install -r {requirements_file}", True, True)
+        progress.console.print("Install requirements success", style="bold green")
+    except Exception:
+        progress.console.print("Install requirements fail", style="bold red")
+        console.print_exception(show_locals=True)
+        sys.exit(1)
+
+
 def check_env():
     """
     check environment

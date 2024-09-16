@@ -19,7 +19,7 @@ from mistletoe.block_token import BlockToken, Paragraph, SetextHeading, Heading
 from mistletoe.span_token import RawText, Strong, LineBreak
 
 from core import settings
-from core.api import do_ai_translate
+from core.llm import do_ai_translate
 from core.log import logger
 from core.translate.utils import clean_body, TRANS_MAGIC
 

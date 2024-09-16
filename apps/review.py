@@ -21,7 +21,7 @@ from typing import List, Tuple
 import httpx
 
 from core import translate
-from core.api import do_ai_review
+from core.analyze import review
 from core.log import logger
 from core.utils import github
 
@@ -171,13 +171,13 @@ async def review_file(file_detail: dict, repo_name: str, commit_message: str, co
         return None
     if file_status not in ['added', 'modified']:
         return None
-    if file_patch:
-        if not is_significant_change(file_patch, file_extension):
-            logger.info("Skip review for file %s", filename)
-            return None
+    # if file_patch:
+    #     if not is_significant_change(file_patch, file_extension):
+    #         logger.info("Skip review for file %s", filename)
+    #         return None
     logger.info(f"Review file {filename}")
     file_content = await github.get_file_content(repo_name, filename, commit_sha, client)
-    review_result = await do_ai_review(filename, commit_message, file_status, file_content, file_patch, repo_name)
+    review_result = await review.do_ai_review(filename, commit_message, file_status, file_content, file_patch, repo_name)
     return translate.wrap_magic(review_result)
 
 

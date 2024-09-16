@@ -5,6 +5,7 @@
 #  LICENSE file in the root of the source tree. All contributing project authors
 #  may be found in the AUTHORS file in the root of the source tree.
 #
+import hashlib
 import re
 
 
@@ -53,3 +54,11 @@ def is_ip_address(ip: str) -> bool:
     """
 
     return bool(re.match(r'^(\d{1,3}\.){3}\d{1,3}$', ip))
+
+
+def get_content_hash(content: str) -> str:
+    """
+    Get the hash value of the content
+    """
+    return hashlib.sha256(content.encode()).hexdigest()
+

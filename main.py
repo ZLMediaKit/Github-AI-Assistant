@@ -7,18 +7,14 @@
 #
 import asyncio
 import os.path
-import signal
-import sys
-from threading import Event
 
 import typer
-from rich.progress import (
-    Progress,
-)
+from rich.progress import Progress
 from typing_extensions import Annotated
 
 from apps import trans, review
 from core import settings, constants, translate, setup
+from core.analyze.core import CodeAnalyzer
 from core.console import console
 from core.log import init_logging
 from core.utils import system, systemd
@@ -29,30 +25,14 @@ app = typer.Typer(no_args_is_help=True,
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 init_logging("main", logger_path=None, logger_level=settings.LOGGER_LEVEL)
 
-done_event = Event()
-
-
-def handle_sigint(signum, frame):
-    done_event.set()
-
-
-signal.signal(signal.SIGINT, handle_sigint)
-
-
-def install_requirements(progress):
-    """
-    Install requirements
-    :param progress:
-    :return:
-    """
-    progress.console.print("Installing requirements", style="bold green")
-    try:
-        system.run_cmd("pip3 install -r ./requirements.txt", True, True)
-        progress.console.print("Install requirements success", style="bold green")
-    except Exception:
-        progress.console.print("Install requirements fail", style="bold red")
-        console.print_exception(show_locals=True)
-        sys.exit(1)
+# done_event = Event()
+#
+#
+# def handle_sigint(signum, frame):
+#     done_event.set()
+#
+#
+# signal.signal(signal.SIGINT, handle_sigint)
 
 
 def install_panel():
@@ -65,7 +45,7 @@ def install_panel():
         return
     with Progress() as progress:
         task = progress.add_task("Installing, please wait", total=6)
-        install_requirements(progress)
+        system.install_requirements(progress, os.path.join(BASE_PATH, "requirements.txt"))
         progress.advance(task)
     console.print("Installed Done!")
     setup.update_env()
@@ -326,23 +306,46 @@ def review_specific_pr(input_url: Annotated[str, typer.Option(
 @app.command("trans_sourcecode_comments", help="Translate all comments content of the project")
 def trans_sourcecode_comments(project_path: Annotated[str, typer.Option(
     help="The path of the project, for example, /home/your/project")],
-                       github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
-                                                                      "github_pat_xxx_yyyyyy",
-                                                                 envvar=[constants.ENV_GITHUB_TOKEN])],
-                       model_name: Annotated[str, typer.Option(
-                           help="The name of the AI model, such as gemini/gemini-1.5-flash")] = None,
-                       api_url: Annotated[str, typer.Option(
-                           help="The request URL of the AI model API. If you use the official API, it is not required.")] = None,
-                       api_key: Annotated[str, typer.Option(
-                           help="The API key of the model, for example, xxxyyyzzz")] = None,
-                       proxy_url: Annotated[str, typer.Option(
-                           help="The url of the http proxy used when requesting the model's API, "
-                                "for example, http://127.0.0.1:8118")] = None
-                       ):
+                              github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
+                                                                             "github_pat_xxx_yyyyyy",
+                                                                        envvar=[constants.ENV_GITHUB_TOKEN])],
+                              model_name: Annotated[str, typer.Option(
+                                  help="The name of the AI model, such as gemini/gemini-1.5-flash")] = None,
+                              api_url: Annotated[str, typer.Option(
+                                  help="The request URL of the AI model API. If you use the official API, it is not required.")] = None,
+                              api_key: Annotated[str, typer.Option(
+                                  help="The API key of the model, for example, xxxyyyzzz")] = None,
+                              proxy_url: Annotated[str, typer.Option(
+                                  help="The url of the http proxy used when requesting the model's API, "
+                                       "for example, http://127.0.0.1:8118")] = None
+                              ):
     setup_result = settings.setup_translation_env(github_token, model_name, api_url, api_key, proxy_url)
     if not setup_result:
         return
     asyncio.run(trans.trans_sourcecode_comments(project_path))
+
+
+@app.command("make_project_index", help="Make project index")
+def make_project_index(repo_url: Annotated[str, typer.Option(
+    help="GitHub repository URL, for example, https://github.com/your-org/your-repository")],
+                              github_token: Annotated[str, typer.Option(help="GitHub access token, for example, "
+                                                                             "github_pat_xxx_yyyyyy",
+                                                                        envvar=[constants.ENV_GITHUB_TOKEN])],
+                              model_name: Annotated[str, typer.Option(
+                                  help="The name of the AI model, such as gemini/gemini-1.5-flash")] = None,
+                              api_url: Annotated[str, typer.Option(
+                                  help="The request URL of the AI model API. If you use the official API, it is not required.")] = None,
+                              api_key: Annotated[str, typer.Option(
+                                  help="The API key of the model, for example, xxxyyyzzz")] = None,
+                              proxy_url: Annotated[str, typer.Option(
+                                  help="The url of the http proxy used when requesting the model's API, "
+                                       "for example, http://127.0.0.1:8118")] = None
+                              ):
+    setup_result = settings.setup_review_env(github_token, model_name, api_url, api_key, proxy_url)
+    if not setup_result:
+        return
+    analyzer = CodeAnalyzer(repo_url)
+    asyncio.run(analyzer.make_full_index())
 
 
 @app.command("webhook", help="The GitHub webhook server")
