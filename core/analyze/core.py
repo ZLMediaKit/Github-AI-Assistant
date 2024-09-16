@@ -32,6 +32,7 @@ from core.analyze import utils, index
 from core.analyze.analyzer import PythonAnalyzer, CppAnalyzer, CodeElementType
 from core.analyze.index import FileDetails
 from core.console import console
+from core.db.milvus import MilvusManager
 from core.llm import call_gemini_api
 from core.log import logger
 from core.utils import strings
@@ -112,6 +113,7 @@ class EmbeddingModel:
 
 
 embedding_model = EmbeddingModel()
+milvus_manager = MilvusManager(settings.get_milvus_uri(), "")
 
 
 class CodeAnalyzer:
@@ -128,8 +130,8 @@ class CodeAnalyzer:
         self.dependencies = {}
         self.exclude_path = []
         self.milvus_uri = milvus_uri
-        self.milvus_client = self.connect_to_milvus()
-        self.code_elements_collection = self.get_or_create_code_elements_collection()
+        self.code_elements_collection = None
+        self.init_lock = asyncio.Lock()
 
         # Initialize language-specific analyzers
         self.analyzers = {
@@ -137,7 +139,7 @@ class CodeAnalyzer:
             'cpp': CppAnalyzer(self.project_source_path),
             'c': CppAnalyzer(self.project_source_path)  # We can use the same analyzer for C and C++
         }
-        self.update_exclude_path()
+        self.update_exclude_path(None)
 
     @staticmethod
     def can_use(repo_fullname: str) -> bool:
@@ -148,26 +150,24 @@ class CodeAnalyzer:
         index_path = index.get_index_path(repo_fullname, os.path.join(settings.BASE_PATH, './data'))
         return os.path.exists(index_path)
 
-    def connect_to_milvus(self):
+    async def get_milvus_client(self) -> MilvusClient:
         """
         连接到 Milvus 数据库，支持独立版本和嵌入式模式
         """
-        if not self.milvus_uri:
-            self.milvus_uri = os.path.join(settings.BASE_PATH, './data/milvus.db')
-        client = MilvusClient(uri=self.milvus_uri)
-        if self.milvus_uri == "sqlite://:memory:":
-            print("Using Milvus in embedded mode (in-memory)")
-        else:
-            print(f"Connected to Milvus server at {self.milvus_uri}")
-        return client
+        if not self.code_elements_collection:
+            async with self.init_lock:
+                if not self.code_elements_collection:
+                    self.code_elements_collection = await self.get_or_create_code_elements_collection()
+            return await milvus_manager.get_client(self.code_elements_collection)
+        return await milvus_manager.get_client(self.code_elements_collection)
 
-    def get_or_create_code_elements_collection(self):
+    async def get_or_create_code_elements_collection(self):
         """
         获取或创建代码元素集合
         """
-        collection_name = f"code_elements_{self.repo_fullname.replace('/', '_').lower()}"
-        if self.milvus_client.has_collection(collection_name):
-            self.milvus_client.load_collection(collection_name)
+        collection_name = f"code_{self.repo_fullname.replace('/', '_').lower()}"
+        client = await milvus_manager.get_client(collection_name)
+        if client.has_collection(collection_name):
             return collection_name
 
         fields = [
@@ -176,11 +176,11 @@ class CodeAnalyzer:
             FieldSchema(name="language", dtype=DataType.VARCHAR, max_length=20),
             FieldSchema(name="element_type", dtype=DataType.VARCHAR, max_length=20),
             FieldSchema(name="element_name", dtype=DataType.VARCHAR, max_length=100),
-            FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=10000),
+            FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=20000),
             FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=768)
         ]
         schema = CollectionSchema(fields=fields, description="代码元素嵌入向量")
-        self.milvus_client.create_collection(
+        client.create_collection(
             dimension=768,
             metric_type="COSINE",
             collection_name=collection_name,
@@ -196,16 +196,16 @@ class CodeAnalyzer:
                 index_params.add_index("embedding", "FLAT", "embedding_index", metric_type="COSINE")
             else:
                 index_params.add_index("embedding", "IVF_FLAT", "embedding_index", nlist=1024, metric_type="COSINE")
-            self.milvus_client.create_index(
+            client.create_index(
                 collection_name=collection_name,
                 index_params=index_params
             )
         except Exception as e:
             logger.error(f"Failed to create index: {e}")
             # 删除集合
-            self.milvus_client.drop_collection(collection_name)
+            client.drop_collection(collection_name)
             raise e
-        self.milvus_client.load_collection(collection_name)
+        client.load_collection(collection_name)
         return collection_name
 
     def get_code_files(self) -> List[str]:
@@ -325,7 +325,7 @@ class CodeAnalyzer:
                         progress.update(task, advance=0, description=f"Make index[{len(file_detail.code_elements)}] for"
                                                                      f" {file_index_name}...")
                         self.index_manager.insert_or_update(file_detail)
-                        self.save_to_db(file_detail)
+                        await self.save_to_db(file_detail)
                     summary["total_files"] += 1
                     summary["languages"][file_detail.language] = summary["languages"].get(file_detail.language, 0) + 1
                     summary["total_code_elements"] += len(file_detail.code_elements)
@@ -369,45 +369,48 @@ class CodeAnalyzer:
         )
         return file_detail
 
-    def save_to_db(self, file_detail: FileDetails):
+    async def save_to_db(self, file_detail: FileDetails):
         """
         保存文件详情到数据库
         :param file_detail:
         :return:
         """
-        exclude_types_list = []
         added_set = set()
-        # 删除此文件的旧向量
-        self.milvus_client.delete(
-            collection_name=self.code_elements_collection,
-            filter=f"file_path == '{file_detail.file_name}'"
-        )
-        # 插入新向量
-        data = []
-        # if len(file_detail.code_elements) > 60:
-        #     logger.info(f"Too many code elements in {file_detail.file_name}, only saving the first 60.")
-        exclude_types_list = [CodeElementType.CONSTANT, CodeElementType.VARIABLE]
-        for element in file_detail.code_elements:
-            if element['type'] in exclude_types_list:
-                continue
-            if f'{element["type"]}_{element["name"]}' in added_set:
-                continue
-            embedding = embedding_model.encode_text(element['content'])
-            data.append({
-                "file_path": file_detail.file_name,
-                "language": file_detail.language,
-                "element_type": element['type'],
-                "element_name": element['name'],
-                "content": element['content'],
-                "embedding": embedding.tolist()
-            })
+        try:
+            client = await self.get_milvus_client()
+            # 删除此文件的旧向量
+            client.delete(
+                collection_name=self.code_elements_collection,
+                filter=f"file_path == '{file_detail.file_name}'"
+            )
+            # 插入新向量
+            data = []
+            # if len(file_detail.code_elements) > 60:
+            #     logger.info(f"Too many code elements in {file_detail.file_name}, only saving the first 60.")
+            exclude_types_list = [CodeElementType.CONSTANT, CodeElementType.VARIABLE]
+            for element in file_detail.code_elements:
+                if element['type'] in exclude_types_list:
+                    continue
+                if f'{element["type"]}_{element["name"]}' in added_set:
+                    continue
+                embedding = embedding_model.encode_text(element['content'])
+                data.append({
+                    "file_path": file_detail.file_name,
+                    "language": file_detail.language,
+                    "element_type": element['type'],
+                    "element_name": element['name'],
+                    "content": element['content'][:20000],
+                    "embedding": embedding.tolist()
+                })
 
-        self.milvus_client.insert(
-            collection_name=self.code_elements_collection,
-            data=data
-        )
+            client.insert(
+                collection_name=self.code_elements_collection,
+                data=data
+            )
+        except Exception as e:
+            logger.error(f"Failed to save file details to the database: {e}", exc_info=True, stack_info=True)
 
-    def analyze_code(self, file_path: str, file_content: str):
+    async def analyze_code(self, file_path: str, file_content: str):
         """
         分析单个文件
         """
@@ -418,13 +421,14 @@ class CodeAnalyzer:
             file_detail = self.get_file_detail(file_path, file_content)
             if file_detail:
                 self.index_manager.insert_or_update(file_detail)
-                self.save_to_db(file_detail)
+                await self.save_to_db(file_detail)
 
-    def get_db_count(self):
+    async def get_db_count(self):
         """
         获取数据库中的元素数量
         """
-        return self.milvus_client.get_collection_stats(self.code_elements_collection)["row_count"]
+        client = await self.get_milvus_client()
+        return client.get_collection_stats(self.code_elements_collection)["row_count"]
 
     async def generate_project_summary(self, summary: Dict) -> Dict[str, Any]:
         """
@@ -478,7 +482,8 @@ class CodeAnalyzer:
         patch_embedding = embedding_model.encode_text(patch_content)
 
         search_params = {"metric_type": "COSINE", "params": {"nprobe": 20}}
-        results = self.milvus_client.search(
+        client = await self.get_milvus_client()
+        results = client.search(
             collection_name=self.code_elements_collection,
             data=[patch_embedding.tolist()],
             anns_field="embedding",
