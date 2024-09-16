@@ -7,6 +7,7 @@
 #
 __author__ = 'alex'
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -113,3 +114,14 @@ def check_pid_status():
         logger.info("Server starting")
         create_pid_file()
     return True
+
+
+def get_file_hash(content):
+    """
+    Get the hash of the file
+    :param content:
+    :return:
+    """
+    md5 = hashlib.md5()
+    md5.update(content.encode())
+    return md5.hexdigest()

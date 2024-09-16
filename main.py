@@ -41,7 +41,15 @@ def install_panel():
     :return:
     """
     installed_flag_file = os.path.join(BASE_PATH, ".installed")
+    install_hash = ""
     if os.path.exists(installed_flag_file):
+        with open(installed_flag_file, "r") as f:
+            install_hash = f.read()
+    # 读取requirements.txt文件
+    with open(os.path.join(BASE_PATH, "requirements.txt"), "r") as f:
+        requirements_hash = system.get_file_hash(f.read())
+    if install_hash == requirements_hash:
+        console.print("Installed Done!")
         return
     with Progress() as progress:
         task = progress.add_task("Installing, please wait", total=6)
@@ -51,7 +59,7 @@ def install_panel():
     setup.update_env()
     console.print("Update .env file success", style="bold green")
     with open(installed_flag_file, "w") as f:
-        f.write("installed")
+        f.write(requirements_hash)
 
 
 @app.command("shell", help="Activate the virtual environment")

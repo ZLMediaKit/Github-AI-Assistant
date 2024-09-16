@@ -48,11 +48,17 @@ class EmbeddingModel:
 
     def load(self):
         with self.lock:
+            local_files_only = True
             logger.info(f"Loading embedding model from {settings.get_embedding_model()}, it may take a few minutes.")
+            # 查找模型是否本地存在
+            model_name = f'models--{settings.get_embedding_model().replace("/", "--")}'
+            if not os.path.exists(os.path.join(settings.BASE_PATH, './cache', model_name)):
+                logger.error(f"Model {settings.get_embedding_model()} not found in the cache directory.")
+                local_files_only = False
             # Load ONNX model for embeddings
             self.embedding_model = TextEmbedding(model_name=settings.get_embedding_model(),
                                                  cache_dir=os.path.join(settings.BASE_PATH, './cache'),
-                                                 local_files_only=True)
+                                                 local_files_only=local_files_only)
 
     # def encode_text(self, text: str) -> np.ndarray:
     #     """使用ONNX模型对文本进行编码"""
