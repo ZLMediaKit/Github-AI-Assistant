@@ -397,7 +397,7 @@ class CodeAnalyzer:
                     continue
                 if f'{element["type"]}_{element["name"]}' in added_set:
                     continue
-                embedding = embedding_model.encode_text(element['element_name'])
+                embedding = embedding_model.encode_text(element['name'])
                 data.append({
                     "file_path": file_detail.file_name,
                     "language": file_detail.language,
