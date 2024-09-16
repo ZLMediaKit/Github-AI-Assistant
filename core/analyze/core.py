@@ -24,7 +24,7 @@ from typing import List, Dict, Any, Optional, Generator
 import git
 import numpy as np
 from fastembed import TextEmbedding
-from pymilvus import DataType, MilvusClient, FieldSchema, CollectionSchema
+from pymilvus import DataType, MilvusClient, FieldSchema, CollectionSchema, MilvusException
 from pymilvus.milvus_client.index import IndexParams
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
@@ -403,13 +403,17 @@ class CodeAnalyzer:
                     "language": file_detail.language,
                     "element_type": element['type'],
                     "element_name": element['name'],
-                    "content": element['content'][:20000],
+                    "content": element['content'][:18000],
                     "embedding": embedding.tolist()
                 })
 
             client.insert(collection_name=self.code_elements_collection, data=data)
+        except MilvusException as e:
+            logger.error(f"Failed to save file details to the database: {e}")
+            await milvus_manager.release_client()
         except Exception as e:
             logger.error(f"Failed to save file details to the database: {e}", exc_info=True, stack_info=True)
+            await milvus_manager.release_client()
 
     async def analyze_code(self, file_path: str, file_content: str):
         """

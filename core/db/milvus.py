@@ -53,6 +53,16 @@ class MilvusManager:
                         logger.error(f"Error loading collection {collection_name}: {e}")
         return self.client
 
+    async def release_client(self):
+        if self.client:
+            try:
+                await asyncio.to_thread(self.client.close)
+                self.loaded_collections.clear()
+                print("Milvus client closed")
+            except Exception as e:
+                print(f"Error closing Milvus client: {e}")
+            self.client = None
+
     async def release_all(self):
         async def release_collection(collection):
             try:
