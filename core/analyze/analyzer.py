@@ -163,15 +163,6 @@ class PythonAnalyzer(CodeElementAnalyzer):
                     'line': node.lineno,
                     'column': node.col_offset
                 })
-            elif isinstance(node, ast.Enum):
-                elements.append({
-                    'type': CodeElementType.ENUM.value,
-                    'name': node.name,
-                    'content': ast.get_source_segment(content, node),
-                    'file': file_path,
-                    'line': node.lineno,
-                    'column': node.col_offset
-                })
 
         return elements
 

@@ -16,6 +16,7 @@ import asyncio
 import glob
 import json
 import os
+import shutil
 import threading
 from typing import List, Dict, Any, Optional, Generator
 
@@ -24,12 +25,13 @@ import numpy as np
 from fastembed import TextEmbedding
 from pymilvus import DataType, MilvusClient, FieldSchema, CollectionSchema
 from pymilvus.milvus_client.index import IndexParams
-from rich.progress import Progress
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
 from core import settings, llm
 from core.analyze import utils, index
 from core.analyze.analyzer import PythonAnalyzer, CppAnalyzer, CodeElementType
 from core.analyze.index import FileDetails
+from core.console import console
 from core.llm import call_gemini_api
 from core.log import logger
 from core.utils import strings
@@ -75,7 +77,7 @@ class EmbeddingModel:
     def chunk_text(self, text: str, chunk_size: int = 1000) -> List[str]:
         """将文本分割成更小的块"""
         words = text.split()
-        return [' '.join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
+        return [' '.join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
 
     def encode_text(self, text: str, chunk_size: int = 1000) -> np.ndarray:
         """
@@ -118,6 +120,7 @@ class CodeAnalyzer:
         self.analyze_data_path = os.path.join(self.base_data_path, '.analyze', repo_fullname)
         self.index_manager = index.get_index_manager(repo_fullname, self.base_data_path, self.project_source_path)
         self.dependencies = {}
+        self.exclude_path = []
         self.milvus_uri = milvus_uri
         self.milvus_client = self.connect_to_milvus()
         self.code_elements_collection = self.get_or_create_code_elements_collection()
@@ -128,6 +131,7 @@ class CodeAnalyzer:
             'cpp': CppAnalyzer(self.project_source_path),
             'c': CppAnalyzer(self.project_source_path)  # We can use the same analyzer for C and C++
         }
+        self.update_exclude_path()
 
     @staticmethod
     def can_use(repo_fullname: str) -> bool:
@@ -200,9 +204,18 @@ class CodeAnalyzer:
         """
         获取所有支持的代码文件的路径
         """
-        files = []
-        for ext in utils.SUPPORTED_LANGUAGES_EXTENSIONS.keys():
-            files.extend(glob.glob(f"{self.project_source_path}/**/*{ext}", recursive=True))
+        # files = []
+        # for ext in utils.SUPPORTED_LANGUAGES_EXTENSIONS.keys():
+        #     files.extend(glob.glob(f"{self.project_source_path}/**/*{ext}", recursive=True))
+        # for exclude_dir in self.exclude_path:
+        #     files = [f for f in files if exclude_dir not in f]
+        # return files
+        pattern = os.path.join(self.project_source_path, '**', '*.*')
+        files = [
+            f for f in glob.iglob(pattern, recursive=True)
+            if os.path.splitext(f)[1] in utils.SUPPORTED_LANGUAGES_EXTENSIONS.keys()
+               and not any(exclude in f for exclude in self.exclude_path)
+        ]
         return files
 
     def has_source_code(self):
@@ -214,27 +227,71 @@ class CodeAnalyzer:
             return True
         return False
 
-    def git_clone(self):
+    def update_exclude_path(self, exclude_dirs: List[str] | None = None):
+        exclude_path_file = os.path.join(self.analyze_data_path, "exclude_dirs.json")
+        if not os.path.exists(os.path.dirname(exclude_path_file)):
+            os.makedirs(os.path.dirname(exclude_path_file))
+        if exclude_dirs:
+            self.exclude_path = exclude_dirs
+            # 写入到文件
+            with open(exclude_path_file, "w") as f:
+                json.dump(self.exclude_path, f)
+        else:
+            # 加载排除的目录
+            if os.path.exists(exclude_path_file):
+                with open(exclude_path_file, "r") as f:
+                    self.exclude_path = json.load(f)
+
+    def git_clone(self) -> bool:
         """
         克隆代码
         """
+
+        def progress_callback(op_code, cur_count, max_count=None, message=''):
+            if max_count:
+                progress.update(main_task, completed=int(cur_count / max_count * 100))
+
         logger.info("checking out the code")
         if not self.has_source_code():
-            logger.info(f"Cloning {self.project_url} to {self.project_source_path}")
-            repo = git.Repo.clone_from(self.project_url, self.project_source_path)
-            # 如果有子项目，也需要初始化
-            for submodule in repo.submodules:
-                submodule.update(init=True, recursive=True)
+            try:
+                logger.info(f"Cloning {self.project_url} to {self.project_source_path}")
+                progress = Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TaskProgressColumn(),
+                    console=console
+                )
+                with progress:
+                    main_task = progress.add_task("[green]Cloning main repository...", total=100)
+                    repo = git.Repo.clone_from(self.project_url, self.project_source_path, progress=progress_callback)
+                    progress.update(main_task, completed=100)
+                    # 如果有子项目，也需要初始化
+                    # 初始化和更新子模块
+                    submodules = repo.submodules
+                    submodule_task = progress.add_task("[cyan]Updating submodules...", total=len(submodules))
+                    for submodule in submodules:
+                        progress.console.print(f"Updating submodule: {submodule.name}")
+                        submodule.update(init=True, recursive=True)
+                        progress.advance(submodule_task)
+            except Exception as e:
+                logger.error(f"Failed to clone the repository: {e}")
+                # 删除目录以及目录下的文件
+                if os.path.exists(self.project_source_path):
+                    shutil.rmtree(self.project_source_path)
+                return False
+            return True
         else:
             logger.info(f"Pulling latest changes for {self.project_url}")
             repo = git.Repo(self.project_source_path)
             repo.remotes.origin.pull()
 
-    async def make_full_index(self):
+    async def make_full_index(self, exclude_dirs: List[str] = None):
         """
         创建完整的代码索引
         :return:
         """
+        self.update_exclude_path(exclude_dirs)
         self.git_clone()
         logger.info("Cleaning up the index")
         self.index_manager.clean_index()
@@ -366,7 +423,8 @@ class CodeAnalyzer:
         生成项目摘要
         """
         # 添加一些统计信息
-        summary["average_elements_per_file"] = summary["total_code_elements"] / summary["total_files"] if summary["total_files"] > 0 else 0
+        summary["average_elements_per_file"] = summary["total_code_elements"] / summary["total_files"] if summary[
+                                                                                                              "total_files"] > 0 else 0
         summary["language_distribution"] = {lang: count / summary["total_files"] * 100 for lang, count in
                                             summary["languages"].items()}
         summary["element_type_distribution"] = {elem_type: count / summary["total_code_elements"] * 100 for
@@ -400,8 +458,9 @@ class CodeAnalyzer:
         """
         messages = [{"role": "user", "content": prompt}]
 
-        overview = await llm.call_ai_api("As an AI assistant, generate a project overview based on the provided summary. ",
-                                         messages, settings.REVIEW_MODEL, 0.3, 50, 0.9)
+        overview = await llm.call_ai_api(
+            "As an AI assistant, generate a project overview based on the provided summary. ",
+            messages, settings.REVIEW_MODEL, 0.3, 50, 0.9)
         return overview
 
     async def get_review_context(self, filename: str, patch_content: str) -> Dict[str, Any]:

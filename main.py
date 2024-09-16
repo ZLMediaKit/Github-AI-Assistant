@@ -339,13 +339,17 @@ def make_project_index(repo_url: Annotated[str, typer.Option(
                                   help="The API key of the model, for example, xxxyyyzzz")] = None,
                               proxy_url: Annotated[str, typer.Option(
                                   help="The url of the http proxy used when requesting the model's API, "
-                                       "for example, http://127.0.0.1:8118")] = None
+                                       "for example, http://127.0.0.1:8118")] = None,
+                              exclude_dirs: Annotated[str, typer.Option(
+                                  help="Exclude directories, for example, tests,docs")] = None
                               ):
     setup_result = settings.setup_review_env(github_token, model_name, api_url, api_key, proxy_url)
     if not setup_result:
         return
     analyzer = CodeAnalyzer(repo_url)
-    asyncio.run(analyzer.make_full_index())
+    if exclude_dirs:
+        exclude_dirs = exclude_dirs.split(",")
+    asyncio.run(analyzer.make_full_index(exclude_dirs))
 
 
 @app.command("webhook", help="The GitHub webhook server")

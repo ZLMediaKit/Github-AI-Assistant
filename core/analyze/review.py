@@ -16,6 +16,7 @@ import json
 
 from core import settings, llm
 from core.analyze.core import CodeAnalyzer
+from core.log import logger
 
 REVIEW_PROMPT_FULL = """
 You are an expert code reviewer. Your task is to review the provided code and offer constructive, detailed feedback. The review process differs based on whether the submission is a patch to an existing file or a new file.
@@ -276,25 +277,36 @@ async def do_ai_review(filename: str, commit_message: str, file_status: str,
         project_name = ""
         project_url = ""
     if CodeAnalyzer.can_use(repo_name):
-        analyzer = CodeAnalyzer(repo_name)
-        context = await analyzer.get_review_context(filename, file_patch)
-        related_context = context.get("context_info", "")
-        if related_context:
-            related_context = json.dumps(related_context, indent=2, ensure_ascii=False)
-        dependencies = context.get("dependencies", "")
-        if dependencies:
-            dependencies = json.dumps(dependencies, indent=2, ensure_ascii=False)
-        messages = [{"role": "user", "content": USER_PROMPT_FULL.format(
-            full_code=code_content,
-            filename=filename,
-            review_type=review_type,
-            commit_message=commit_message,
-            project_url=project_url,
-            project_name=project_name,
-            patch_code=file_patch,
-            project_overview=context.get("overview", ""),
-            related_context=related_context,
-            patch_dependencies=dependencies)}]
+        try:
+            analyzer = CodeAnalyzer(repo_name)
+            context = await analyzer.get_review_context(filename, file_patch)
+            related_context = context.get("context_info", "")
+            if related_context:
+                related_context = json.dumps(related_context, indent=2, ensure_ascii=False)
+            dependencies = context.get("dependencies", "")
+            if dependencies:
+                dependencies = json.dumps(dependencies, indent=2, ensure_ascii=False)
+            messages = [{"role": "user", "content": USER_PROMPT_FULL.format(
+                full_code=code_content,
+                filename=filename,
+                review_type=review_type,
+                commit_message=commit_message,
+                project_url=project_url,
+                project_name=project_name,
+                patch_code=file_patch,
+                project_overview=context.get("overview", ""),
+                related_context=related_context,
+                patch_dependencies=dependencies)}]
+        except Exception as e:
+            logger.error(f"Error in code analysis: {e}")
+            messages = [{"role": "user", "content": USER_PROMPT.format(
+                full_code=code_content,
+                filename=filename,
+                review_type=review_type,
+                commit_message=commit_message,
+                project_url=project_url,
+                project_name=project_name,
+                patch_code=file_patch)}]
     else:
         messages = [{"role": "user", "content": USER_PROMPT.format(
             full_code=code_content,

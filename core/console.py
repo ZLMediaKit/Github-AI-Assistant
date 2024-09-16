@@ -22,6 +22,7 @@ from rich.panel import Panel
 console = Console()
 
 
+
 def get_spinner_progress(transient=False):
     return Progress(
         SpinnerColumn(),
