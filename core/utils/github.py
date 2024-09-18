@@ -10,6 +10,7 @@ __author__ = 'alex'
 import base64
 import hashlib
 import hmac
+import logging
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -28,6 +29,12 @@ LABEL_REFINED = Label(name="RefinedByAI", color="f29513", description="Refined b
 LABEL_ENGLISH_NATIVE = Label(name="EnglishNative", color="C3A138", description="English Native", id="")
 IGNORE_LOGIN = 'dependabot'
 GITHUB_REST_API = "https://api.github.com"
+
+logger = logging.getLogger(__name__)
+
+
+def custom_retry_condition(exception):
+    return not isinstance(exception, GithubApiException)
 
 
 class RepoDetail(BaseModel):
@@ -178,6 +185,11 @@ async def do_rest_post_requests(path, json_data, http_client: httpx.AsyncClient 
         return result
 
 
+@tenacity.retry(
+    retry=tenacity.retry_if_exception(lambda e: custom_retry_condition(e)),
+    wait=tenacity.wait_fixed(5), stop=tenacity.stop_after_attempt(3),
+    before_sleep=tenacity.before_sleep_log(logger, logging.WARNING)
+)
 async def do_rest_get_requests(path, http_client: httpx.AsyncClient = None):
     if http_client:
         response = await http_client.get(get_github_rest_api_endpoint(path), headers=get_rest_headers())
@@ -438,6 +450,9 @@ async def update_issue(issues_id, title, body, original_title=None):
           }
         }
     '''
+    # 如果body为空，会导致更新失败, 所以这里做一个处理
+    if not body:
+        body = " "
     result = await do_post_requests({"query": query, "variables": {
         "id": issues_id, "title": title, "body": body,
     }})
@@ -700,6 +715,12 @@ async def update_pullrequest(pr_id, title, body, original_title=None):
 async def get_pullrequest(repo_name: str, pr_number: int):
     path = f"/repos/{repo_name}/pulls/{pr_number}"
     return await do_rest_get_requests(path)
+
+
+async def get_default_branch(repo_full_name):
+    path = f"/repos/{repo_full_name}"
+    result = await do_rest_get_requests(path)
+    return result['default_branch']
 
 
 async def search_issues(owner, name, isf, sort, labels, count):

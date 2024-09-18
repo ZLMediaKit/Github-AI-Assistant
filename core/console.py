@@ -22,7 +22,6 @@ from rich.panel import Panel
 console = Console()
 
 
-
 def get_spinner_progress(transient=False):
     return Progress(
         SpinnerColumn(),
@@ -45,7 +44,8 @@ def get_download_progress():
     )
 
 
-def select_prompt(prompt: str, options: Union[List[Any], Dict[str, Any]], max_retries: int = 99, default: Optional[Union[str, int]] = None,) -> Any:
+def select_prompt(prompt: str, options: Union[List[Any], Dict[str, Any]], max_retries: int = 99,
+                  default: Optional[Union[str, int]] = None, ) -> Any:
     import tenacity
     @tenacity.retry(
         stop=tenacity.stop_after_attempt(max_retries),

@@ -13,17 +13,13 @@
 __author__ = 'alex'
 
 import asyncio
-import gc
 import glob
 import json
 import os
 import shutil
-import threading
-from typing import List, Dict, Any, Optional, Generator
+from typing import List, Dict, Any, Optional
 
 import git
-import numpy as np
-from fastembed import TextEmbedding
 from pymilvus import DataType, MilvusClient, FieldSchema, CollectionSchema, MilvusException
 from pymilvus.milvus_client.index import IndexParams
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -34,84 +30,12 @@ from core.analyze.analyzer import PythonAnalyzer, CppAnalyzer, CodeElementType
 from core.analyze.index import FileDetails
 from core.console import console
 from core.db.milvus import MilvusManager
+from core.embedding import EmbeddingModel
 from core.llm import call_gemini_api
 from core.log import logger
+from core.thread import get_backend_thread_pool
 from core.utils import strings
-from core.utils.decorators import singleton_adv
 from core.utils.github import parse_repository_url
-
-
-@singleton_adv
-class EmbeddingModel:
-    def __init__(self):
-        self.embedding_model = None
-        # 线程锁
-        self.lock = threading.Lock()
-
-    def load(self):
-        with self.lock:
-            if self.embedding_model is None:
-                local_files_only = True
-                logger.info(f"Loading embedding model from {settings.get_embedding_model()}, it may take a few minutes.")
-                model_name = f'models--{settings.get_embedding_model().replace("/", "--")}'
-                cache_dir = os.path.join(settings.BASE_PATH, './cache')
-
-                if not os.path.exists(os.path.join(cache_dir, model_name)):
-                    logger.error(f"Model {settings.get_embedding_model()} not found in the cache directory.")
-                    local_files_only = False
-
-                self.embedding_model = TextEmbedding(
-                    model_name=settings.get_embedding_model(),
-                    cache_dir=cache_dir,
-                    local_files_only=local_files_only
-                )
-
-    def get_model(self) -> TextEmbedding:
-        if self.embedding_model is None:
-            self.load()
-        return self.embedding_model
-
-    def chunk_text(self, text: str, chunk_size: int = 1000) -> List[str]:
-        """将文本分割成更小的块"""
-        words = text.split()
-        return [' '.join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
-
-    def encode_text(self, text: str, chunk_size: int = 1000) -> np.ndarray:
-        """
-        根据文本大小自适应地选择处理方式
-        """
-        try:
-            model = self.get_model()
-            if len(text.split()) <= chunk_size:
-                embeddings = next(model.embed([text]))
-                return embeddings
-            else:
-                chunks = self.chunk_text(text, chunk_size)
-                embeddings = []
-                for chunk in chunks:
-                    chunk_embedding = next(model.embed([chunk]))
-                    embeddings.append(chunk_embedding)
-                    gc.collect()  # Force garbage collection after each chunk
-                return np.mean(embeddings, axis=0)
-        except Exception as e:
-            logger.error(f"Failed to encode text: {e}")
-            return np.zeros(model.dim)  # Use the dimension from the model
-
-    def encode_large_document(self, document: str, chunk_size: int = 1000) -> Generator[np.ndarray, None, None]:
-        chunks = self.chunk_text(document, chunk_size)
-        for chunk in chunks:
-            yield self.encode_text(chunk, chunk_size)
-            gc.collect()  # Force garbage collection after each chunk
-
-    def process_large_document(self, document: str, chunk_size: int = 1000) -> np.ndarray:
-        embeddings = []
-        for embedding in self.encode_large_document(document, chunk_size):
-            embeddings.append(embedding)
-        result = np.mean(embeddings, axis=0)
-        del embeddings
-        gc.collect()
-        return result
-
 
 embedding_model = EmbeddingModel()
 milvus_manager = MilvusManager(settings.get_milvus_uri(), "")
@@ -131,7 +55,8 @@ class CodeAnalyzer:
         self.dependencies = {}
         self.exclude_path = []
         self.milvus_uri = milvus_uri
-        self.code_elements_collection = None
+        self.code_elements_collection = f"code_{self.repo_fullname.replace('/', '_').lower()}"
+        self.code_elements_collection_loaded = False
         self.init_lock = asyncio.Lock()
 
         # Initialize language-specific analyzers
@@ -151,29 +76,15 @@ class CodeAnalyzer:
         index_path = index.get_index_path(repo_fullname, os.path.join(settings.BASE_PATH, './data'))
         return os.path.exists(index_path)
 
-    async def get_milvus_client(self) -> MilvusClient:
-        """
-        连接到 Milvus 数据库，支持独立版本和嵌入式模式
-        """
-        try:
-            if not self.code_elements_collection:
-                async with self.init_lock:
-                    if not self.code_elements_collection:
-                        self.code_elements_collection = await self.get_or_create_code_elements_collection()
-                return await milvus_manager.get_client(self.code_elements_collection)
-            return await milvus_manager.get_client(self.code_elements_collection)
-        except Exception as e:
-            logger.error(f"Failed to connect to Milvus: {e}")
-            raise e
-
-    async def get_or_create_code_elements_collection(self):
+    async def check_elements_collection(self) -> bool:
         """
         获取或创建代码元素集合
         """
-        collection_name = f"code_{self.repo_fullname.replace('/', '_').lower()}"
-        client = await milvus_manager.get_client(collection_name)
-        if client.has_collection(collection_name):
-            return collection_name
+        if self.code_elements_collection_loaded:
+            return True
+        if await milvus_manager.has_collection(self.code_elements_collection):
+            self.code_elements_collection_loaded = True
+            return True
 
         fields = [
             FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
@@ -185,10 +96,10 @@ class CodeAnalyzer:
             FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=768)
         ]
         schema = CollectionSchema(fields=fields, description="代码元素嵌入向量")
-        client.create_collection(
+        await milvus_manager.create_collection(
             dimension=768,
             metric_type="COSINE",
-            collection_name=collection_name,
+            collection_name=self.code_elements_collection,
             schema=schema,
             vector_field_name="embedding",
             description="代码元素嵌入向量"
@@ -201,17 +112,18 @@ class CodeAnalyzer:
                 index_params.add_index("embedding", "FLAT", "embedding_index", metric_type="COSINE")
             else:
                 index_params.add_index("embedding", "IVF_FLAT", "embedding_index", nlist=1024, metric_type="COSINE")
-            client.create_index(
-                collection_name=collection_name,
+            await milvus_manager.create_index(
+                collection_name=self.code_elements_collection,
                 index_params=index_params
             )
         except Exception as e:
             logger.error(f"Failed to create index: {e}")
             # 删除集合
-            client.drop_collection(collection_name)
+            await milvus_manager.drop_collection(self.code_elements_collection)
             raise e
-        client.load_collection(collection_name)
-        return collection_name
+        await milvus_manager.load_collection(self.code_elements_collection)
+        self.code_elements_collection_loaded = True
+        return True
 
     def get_code_files(self) -> List[str]:
         """
@@ -254,6 +166,7 @@ class CodeAnalyzer:
             if os.path.exists(exclude_path_file):
                 with open(exclude_path_file, "r") as f:
                     self.exclude_path = json.load(f)
+        print(f"Exclude path: {self.exclude_path}")
 
     def git_clone(self) -> bool:
         """
@@ -382,11 +295,11 @@ class CodeAnalyzer:
         """
         added_set = set()
         try:
-            client = await self.get_milvus_client()
             # 删除此文件的旧向量
-            client.delete(collection_name=self.code_elements_collection,
-                          filter=f"file_path == '{file_detail.file_name}'"
-                          )
+            await self.check_elements_collection()
+            await milvus_manager.delete(collection_name=self.code_elements_collection,
+                                        filter=f"file_path == '{file_detail.file_name}'"
+                                        )
             # 插入新向量
             data = []
             # if len(file_detail.code_elements) > 60:
@@ -397,7 +310,7 @@ class CodeAnalyzer:
                     continue
                 if f'{element["type"]}_{element["name"]}' in added_set:
                     continue
-                embedding = embedding_model.encode_text(element['name'])
+                embedding = await embedding_model.async_encode_text(element['name'])
                 data.append({
                     "file_path": file_detail.file_name,
                     "language": file_detail.language,
@@ -407,7 +320,7 @@ class CodeAnalyzer:
                     "embedding": embedding.tolist()
                 })
 
-            client.insert(collection_name=self.code_elements_collection, data=data)
+            await milvus_manager.insert(collection_name=self.code_elements_collection, data=data)
         except MilvusException as e:
             logger.error(f"Failed to save file details to the database: {e}")
             await milvus_manager.release_client()
@@ -415,25 +328,70 @@ class CodeAnalyzer:
             logger.error(f"Failed to save file details to the database: {e}", exc_info=True, stack_info=True)
             await milvus_manager.release_client()
 
-    async def analyze_code(self, file_path: str, file_content: str):
+    async def analyze_code(self, file_path: str, file_content: str, is_delete: bool):
         """
         分析单个文件
         """
+        file_name_for_index = os.path.relpath(file_path, self.project_source_path)
+        if is_delete:
+            # 删除文件
+            logger.info(f"Deleting file {file_name_for_index}")
+            self.index_manager.delete(file_name_for_index)
+            await self.check_elements_collection()
+            await milvus_manager.delete(collection_name=self.code_elements_collection,
+                                        filter=f"file_path == '{file_name_for_index}'"
+                                        )
         code_hash = strings.get_content_hash(file_content)
-        index_detail = self.index_manager.get_index(file_path)
+        index_detail = self.index_manager.get_index(file_name_for_index)
         # 检查文件是否有变化
         if not index_detail or index_detail.code_hash != code_hash:
+            logger.info(f"Analyzing file {file_name_for_index}")
             file_detail = self.get_file_detail(file_path, file_content)
             if file_detail:
                 self.index_manager.insert_or_update(file_detail)
                 await self.save_to_db(file_detail)
+                logger.info(f"Analyzed file {file_name_for_index}")
+            else:
+                logger.error(f"Failed to analyze file {file_name_for_index}")
+        else:
+            logger.info(f"File {file_name_for_index} has not changed.")
+
+    async def check_git_changes(self):
+        """
+        检查git的变化
+        """
+        if not os.path.exists(self.project_source_path):
+            logger.error(f"Project source path {self.project_source_path} does not exist.")
+            return
+        repo = git.Repo(self.project_source_path)
+        # Store the current commit hash
+        old_commit = repo.head.commit
+        # Pull the latest changes
+        origin = repo.remotes.origin
+        await get_backend_thread_pool().run_in_thread(origin.pull)
+        # Get the new commit hash
+        new_commit = repo.head.commit
+        # Get the list of changed files
+        changed_files = old_commit.diff(new_commit)
+        for file in changed_files:
+            # 判断文件是添加/修改还是删除
+            if file.change_type in ['A', 'M']:
+                is_delete = False
+            elif file.change_type == 'D':
+                is_delete = True
+            else:
+                continue
+            file_path = os.path.abspath(os.path.join(self.project_source_path, file.a_path))
+            if file.a_path.endswith(tuple(utils.SUPPORTED_LANGUAGES_EXTENSIONS.keys())):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    await self.analyze_code(file_path, content, is_delete)
 
     async def get_db_count(self):
         """
         获取数据库中的元素数量
         """
-        client = await self.get_milvus_client()
-
+        client = await milvus_manager.get_client(self.code_elements_collection)
         return client.get_collection_stats(self.code_elements_collection)["row_count"]
 
     async def generate_project_summary(self, summary: Dict) -> Dict[str, Any]:
@@ -485,11 +443,11 @@ class CodeAnalyzer:
         """
         审查所需要的上下文信息
         """
-        patch_embedding = embedding_model.encode_text(patch_content)
+        patch_embedding = await embedding_model.async_encode_text(patch_content)
 
         search_params = {"metric_type": "COSINE", "params": {"nprobe": 20}}
-        client = await self.get_milvus_client()
-        results = client.search(
+        await self.check_elements_collection()
+        results = await milvus_manager.search(
             collection_name=self.code_elements_collection,
             data=[patch_embedding.tolist()],
             anns_field="embedding",

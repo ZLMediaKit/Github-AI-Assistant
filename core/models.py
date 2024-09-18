@@ -62,7 +62,7 @@ class BaseDetail(BaseModel):
         text_list.append(f"Url: {self.url}")
         text_list.append(f"Title: {self.title}")
         text_list.append(f"Labels: {labels_text}")
-        text_list.append(f"Body:\n{self.body}\n")
+        # text_list.append(f"Body:\n{self.body}\n")
         return "\n".join(text_list)
 
 

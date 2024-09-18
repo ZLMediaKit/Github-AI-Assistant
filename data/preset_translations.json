@@ -15,5 +15,8 @@
     "* **其他需要补充的信息**:": "* **Other information to be supplemented**:",
     "## 描述该功能的用处，可以提供相关资料描述该功能": "## Describe the purpose of this feature, and provide relevant information to describe this feature",
     "## 该功能是否用于改进项目缺陷，如果是，请描述现有缺陷": "## Is this feature used to improve project defects? If so, please describe the existing defects",
-    "## 描述你期望实现该功能的方式和最终效果": "## Describe how you expect to achieve this feature and the final effect"
+    "## 描述你期望实现该功能的方式和最终效果": "## Describe how you expect to achieve this feature and the final effect",
+    "[功能请求]": "[Feature Request]",
+    "[技术咨询]": "[Technical Consultation]",
+    "[编译问题]": "[Compilation Issue]"
 }

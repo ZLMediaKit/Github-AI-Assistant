@@ -117,11 +117,11 @@ def init_translation_model(need_model=False):
     model_info = MODELS.get(translation_model, None)
     if model_info is None:
         if need_model:
-            raise Exception(f"model {translation_model} not found")
-        else:
-            print(f"model {translation_model} not found, disable translation")
-            return
-    TRANSLATION_MODEL.model_name = translation_model.split("/")[-1]
+            print(f"The model {translation_model} is not defined in models.json, so use the default configuration.")
+        model_info = {}
+        TRANSLATION_MODEL.model_name = translation_model
+    else:
+        TRANSLATION_MODEL.model_name = translation_model.split("/")[-1]
     TRANSLATION_MODEL.api_key = get_setting_from_cache(constants.ENV_TRANSLATION_API_KEY)
     TRANSLATION_MODEL.api_url = get_setting_from_cache(constants.ENV_TRANSLATION_API_URL)
     TRANSLATION_MODEL.api_request_limit = get_setting_from_cache(constants.ENV_TRANSLATION_API_REQUEST_LIMIT, 10)
@@ -129,7 +129,7 @@ def init_translation_model(need_model=False):
                                                                 model_info.get("max_input_tokens", 1024 * 4))
     TRANSLATION_MODEL.max_output_tokens = get_setting_from_cache(constants.ENV_TRANSLATION_API_MAX_OUTPUT_TOKENS,
                                                                  model_info.get("max_output_tokens", 8192))
-    TRANSLATION_MODEL.provider = model_info.get("provider", "openai_rest")
+    TRANSLATION_MODEL.provider = model_info.get("provider", "openai_like")
     TRANSLATION_MODEL.mode = model_info.get("mode", "chat")
     if not TRANSLATION_MODEL.api_key:
         console.print(f"Warning: {constants.ENV_TRANSLATION_API_KEY} is not set", style="bold red")
@@ -142,11 +142,11 @@ def init_review_model(need_model=False):
     model_info = MODELS.get(review_model, None)
     if model_info is None:
         if need_model:
-            raise Exception(f"model {review_model} not found")
-        else:
-            print(f"model {review_model} not found, disable review")
-            return
-    REVIEW_MODEL.model_name = review_model.split("/")[-1]
+            print(f"The model {review_model} is not defined in models.json, so use the default configuration.")
+        model_info = {}
+        REVIEW_MODEL.model_name = review_model
+    else:
+        REVIEW_MODEL.model_name = review_model.split("/")[-1]
     REVIEW_MODEL.api_key = get_setting_from_cache(constants.ENV_REVIEW_API_KEY)
     REVIEW_MODEL.api_url = get_setting_from_cache(constants.ENV_REVIEW_API_URL)
     REVIEW_MODEL.api_request_limit = get_setting_from_cache(constants.ENV_REVIEW_API_REQUEST_LIMIT, 10)
@@ -154,7 +154,7 @@ def init_review_model(need_model=False):
                                                            model_info.get("max_input_tokens", 1024 * 4))
     REVIEW_MODEL.max_output_tokens = get_setting_from_cache(constants.ENV_REVIEW_API_MAX_OUTPUT_TOKENS,
                                                             model_info.get("max_output_tokens", 8192))
-    REVIEW_MODEL.provider = model_info.get("provider", "openai_rest")
+    REVIEW_MODEL.provider = model_info.get("provider", "openai_like")
     REVIEW_MODEL.mode = model_info.get("mode", "chat")
     if not REVIEW_MODEL.api_key:
         console.print(f"Warning: {constants.ENV_REVIEW_API_KEY} is not set", style="bold red")

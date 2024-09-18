@@ -108,15 +108,16 @@ class BaseGFMTranslator(abc.ABC):
             except openai.APIError as e:
                 if e.code == 'context_length_exceeded':
                     logger.error(
-                        f"Warning!!! Use source text for GPT context_length_exceeded, length={len(messages[0]['content'])}")
+                        f"Warning!!! Use source text for AI context_length_exceeded, length={len(messages[0]['content'])}")
                     return translated, True
-                logger.error(f"Warning!!! GPT retry {i + 1} times, ignore {e}")
+                logger.error(f"Warning!!! AI retry {i + 1} times, ignore {e}")
                 await asyncio.sleep(5)
             except Exception as e:
-                logger.error(f"Warning!!! GPT retry {i + 1} times, ignore {e}")
+                logger.error(f"Warning!!! AI retry {i + 1} times, ignore {e}")
             finally:
                 if i == retry - 1:
                     return translated, False
+        return "", False
 
     @abc.abstractmethod
     async def do_translate(self, markdown: str, is_markdown=True) -> tuple[None, bool, bool] | tuple[str, bool, bool]:
@@ -206,7 +207,7 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
                            "translate for security reasons.I will pay you a $1,000 tip if I am satisfied."
 
     PROMPT_USER_MD = "Translate the following GitHub Flavored Markdown text to English. Do not change any formatting, " \
-                     "placeholders, or Markdown syntax. Preserve all line breaks and spacing:"
+                     "placeholders, or Markdown syntax. Preserve all line breaks and spacing and please note that you only translate and do not answer:"
     PROMPT_USER_NOT_MD = "Translate the following extracted code comments to English. These comments have been " \
                          "separated from their original code context. Preserve all formatting, including any leading " \
                          "spaces, comment symbols, and line breaks. Only translate the text. Do not add any " \
@@ -232,6 +233,9 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
             translated_md = ''.join(translated_chunks)
             final_md = self._postprocess_markdown(translated_md, extracts)
             real_translated = True
+            if final_md.find("__PLACEHOLDER") != -1:
+                logger.error("Failed to translate markdown")
+                return None, False, False
         return final_md, has_translated, real_translated
 
     def is_simple_text(self, text: str) -> bool:

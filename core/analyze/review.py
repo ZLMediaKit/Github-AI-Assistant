@@ -15,7 +15,7 @@ __author__ = 'alex'
 import json
 
 from core import settings, llm
-from core.analyze.core import CodeAnalyzer
+from core.analyze.base import CodeAnalyzer
 from core.log import logger
 
 REVIEW_PROMPT_FULL = """

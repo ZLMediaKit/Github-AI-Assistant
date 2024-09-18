@@ -35,7 +35,7 @@ async def update_issue_comment(comment: Comment, translated_body: str, original_
 async def trans_comments(comments: List[Comment]) -> bool:
     has_translated_by_gpt = False
     for index, detail in enumerate(comments):
-        logger.info(f"===============Comment(#{index + 1})===============\n{detail.get_detail_text()}")
+        logger.info(f"===============Comment(#{index + 1})===============\n")
         if translate.TRANS_MAGIC in detail.body:
             has_translated_by_gpt = True
             logger.info("Already translated, skip")
@@ -45,13 +45,20 @@ async def trans_comments(comments: List[Comment]) -> bool:
                                               max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
         translated_body, has_translated_by_gpt, real_translated = await translator.translate(detail.body)
         if real_translated:
-            logger.info(f"New Body:\n{translated_body}\n")
+            logger.info(f"Translated Body")
             await update_issue_comment(detail, translated_body, detail.body)
     return has_translated_by_gpt
 
 
 async def update_detail(detail_type: str, detail_id: str, translated_title: str, translated_body: str,
                         original_title: str, original_body: str):
+    if not translated_title and not translated_body:
+        logger.error("Translated title or body is empty, skip")
+        return
+    if not translated_title:
+        translated_title = original_title
+    if not translated_body:
+        translated_body = original_body
     try:
         if detail_type == models.DETAIL_TYPE_ISSUE:
             await github.update_issue(detail_id, translated_title,
@@ -97,13 +104,14 @@ async def trans_detail(detail: BaseDetail, repo_detail: RepoDetail):
     logger.info("")
     logger.info(detail.get_detail_text())
     issue_changed = False
+    real_translated = False
     issue_has_translated_by_gpt = False
     translated_title = detail.title
     translated_body = detail.body
     if translate.TRANS_MAGIC in detail.body:
         issue_has_translated_by_gpt = True
         logger.info("Body is already translated, skip")
-    elif translate.already_english(detail.body):
+    elif translate.already_english(detail.body) and len(detail.body) > 0:
         logger.info("Body is already english, skip")
     else:
         logger.info("Translating...")
@@ -123,7 +131,7 @@ async def trans_detail(detail: BaseDetail, repo_detail: RepoDetail):
             issue_has_translated_by_gpt = True
         if real_translated:
             issue_changed = True
-            logger.info(f"New Body:\n{translated_body}\n")
+            logger.info(f"Body has been translated")
     if not issue_changed:
         logger.info("Nothing changed, skip")
     else:
@@ -133,10 +141,9 @@ async def trans_detail(detail: BaseDetail, repo_detail: RepoDetail):
     translated_by_gpt = comment_has_translated_by_gpt or issue_has_translated_by_gpt
     if translated_by_gpt or has_gpt_label:
         logger.info("Label is already set, skip")
-    else:
+    elif real_translated and issue_changed:
         await add_label(detail.id, repo_detail, github.LABEL_TRANS)
         has_gpt_label = True
-
     if not translated_by_gpt and not has_gpt_label and not has_en_native_label:
         await add_label(detail.id, repo_detail, github.LABEL_ENGLISH_NATIVE)
     logger.info("Translation completed")
@@ -378,7 +385,7 @@ async def batch_trans(input_url, query_filter, query_limit):
         repository.owner,
         repository.name,
         query_filter,
-        "sort:comments-desc",
+        "",
         [f"-label:{github.LABEL_TRANS.name}", f"-label:{github.LABEL_ENGLISH_NATIVE.name}"],
         query_limit,
     )
@@ -389,20 +396,24 @@ async def batch_trans(input_url, query_filter, query_limit):
     logger.info(f"Start to translate {len(query_results)} objects, {comments} comments.")
 
     for index, issue in enumerate(query_results):
-        logger.info("\n\n\n\n\n\n")
-        logger.info(f"===============Object(#{index + 1})===============")
-        logger.info(f"ID: {issue['id']}")
-        logger.info(f"Title: {issue['title']}")
-        logger.info(f"URL: {issue['url']}")
-        if 'issue' in query_filter:
-            await trans_issues(issue["url"])
-        elif 'pr' in query_filter or 'pullrequest' in query_filter:
-            await trans_pr(issue["url"])
-        elif 'discussion' in query_filter:
-            await trans_discussion(issue["url"])
-        else:
-            logger.error("query_filter should be in [issue, pr, discussion]")
-            return
+        try:
+            logger.info("\n\n\n\n\n\n")
+            logger.info(f"===============Object(#{index + 1})===============")
+            logger.info(f"ID: {issue['id']}")
+            logger.info(f"Title: {issue['title']}")
+            logger.info(f"URL: {issue['url']}")
+            if 'issue' in query_filter:
+                await trans_issues(issue["url"])
+            elif 'pr' in query_filter or 'pullrequest' in query_filter:
+                await trans_pr(issue["url"])
+            elif 'discussion' in query_filter:
+                await trans_discussion(issue["url"])
+            else:
+                logger.error("query_filter should be in [issue, pr, discussion]")
+                return
+        except Exception as e:
+            logger.exception(f"Translate failed, {e}")
+            continue
 
 
 async def translate_text(text):
