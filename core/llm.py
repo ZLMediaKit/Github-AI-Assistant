@@ -39,7 +39,11 @@ async def call_gemini_api(prompt: str, messages, model: ModelSettings, temperatu
     """
     gemini_key = model.api_key
     gemini_model = model.model_name
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={gemini_key}"
+    if model.api_url:
+        base_url = model.api_url
+    else:
+        base_url = "https://generativelanguage.googleapis.com"
+    url = f"{base_url}/v1beta/models/{gemini_model}:generateContent?key={gemini_key}"
     data = {
         "system_instruction": {
             "parts": {"text": prompt}
@@ -81,6 +85,7 @@ async def call_gemini_api(prompt: str, messages, model: ModelSettings, temperatu
 
     headers = {
         "Content-Type": "application/json",
+        "x-goog-api-key": gemini_key
     }
     async with httpx.AsyncClient(proxy=settings.get_proxy_url()) as client:
         response = await client.post(url, headers=headers, json=data, timeout=30)

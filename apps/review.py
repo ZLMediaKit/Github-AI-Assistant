@@ -213,6 +213,7 @@ async def review_pull_request(repo_name, pr_number, commit_sha, commit_message):
                 "path": file['filename'],
                 "subject_type": "file"
             }
+            # print(comment_data)
             await github.create_pr_comment(repo_name, pr_number, comment_data, client)
 
 
