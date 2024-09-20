@@ -245,7 +245,8 @@ async def pull_request_handler(action: str, payload, event, delivery, headers):
     if not settings.REVIEW_MODEL.api_key:
         logger.info(f"Thread: {delivery}: No review model, skip")
         return
-
+    if not body:
+        body = ""
     await review.review_pull_request(repo_name, pr_number, head_sha, f"{title}\n\n{body}")
 
 

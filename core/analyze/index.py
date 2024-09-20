@@ -39,6 +39,7 @@ class IndexItem(pydantic.BaseModel):
     language: str
     last_modified: float
     dependencies: List[str]
+    # code_elements: List[Dict[str, Any]]
 
 
 INDEX_PATH_PREFIX = '.index'
@@ -92,7 +93,8 @@ class IndexManager:
             code_hash=file_detail.code_hash,
             language=file_detail.language,
             last_modified=os.path.getmtime(os.path.join(self.source_path, file_detail.file_name)),
-            dependencies=file_detail.dependencies
+            dependencies=file_detail.dependencies,
+            # code_elements=file_detail.code_elements
         )
         with open(index_file_name, 'w') as f:
             f.write(index_item.json())

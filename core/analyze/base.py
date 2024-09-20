@@ -16,6 +16,7 @@ import asyncio
 import glob
 import json
 import os
+import re
 import shutil
 from typing import List, Dict, Any, Optional
 
@@ -55,7 +56,7 @@ class CodeAnalyzer:
         self.dependencies = {}
         self.exclude_path = []
         self.milvus_uri = milvus_uri
-        self.code_elements_collection = f"code_{self.repo_fullname.replace('/', '_').lower()}"
+        self.code_elements_collection = f"v1_code_{self.repo_fullname.replace('/', '_').lower()}"
         self.code_elements_collection_loaded = False
         self.init_lock = asyncio.Lock()
 
@@ -92,26 +93,26 @@ class CodeAnalyzer:
             FieldSchema(name="language", dtype=DataType.VARCHAR, max_length=20),
             FieldSchema(name="element_type", dtype=DataType.VARCHAR, max_length=20),
             FieldSchema(name="element_name", dtype=DataType.VARCHAR, max_length=100),
-            FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=20000),
+            FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=65535),
             FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=768)
         ]
-        schema = CollectionSchema(fields=fields, description="代码元素嵌入向量")
+        schema = CollectionSchema(fields=fields, description="Code search collection")
         await milvus_manager.create_collection(
             dimension=768,
-            metric_type="COSINE",
+            metric_type="IP",
             collection_name=self.code_elements_collection,
             schema=schema,
             vector_field_name="embedding",
-            description="代码元素嵌入向量"
+            description="Code search collection"
         )
         # 创建向量索引
         index_params = IndexParams()
         try:
             # 判断milvus使用的模式, 本地或者内存
             if self.milvus_uri == "sqlite://:memory:" or not self.milvus_uri or self.milvus_uri.startswith("/"):
-                index_params.add_index("embedding", "FLAT", "embedding_index", metric_type="COSINE")
+                index_params.add_index("embedding", "FLAT", "embedding_index", metric_type="IP")
             else:
-                index_params.add_index("embedding", "IVF_FLAT", "embedding_index", nlist=1024, metric_type="COSINE")
+                index_params.add_index("embedding", "IVF_FLAT", "embedding_index", nlist=1024, metric_type="IP")
             await milvus_manager.create_index(
                 collection_name=self.code_elements_collection,
                 index_params=index_params
@@ -306,6 +307,8 @@ class CodeAnalyzer:
             #     logger.info(f"Too many code elements in {file_detail.file_name}, only saving the first 60.")
             exclude_types_list = [CodeElementType.CONSTANT, CodeElementType.VARIABLE]
             for element in file_detail.code_elements:
+                if not element['name'] or len(element['name']) == 0:
+                    continue
                 if element['type'] in exclude_types_list:
                     continue
                 if f'{element["type"]}_{element["name"]}' in added_set:
@@ -439,28 +442,65 @@ class CodeAnalyzer:
             messages, settings.REVIEW_MODEL, 0.3, 50, 0.9)
         return overview
 
+    def clean_patch(self, patch_content: str) -> str:
+        """
+        清理补丁内容，删除两个@@之间的字符, 忽略删除的行
+        """
+        cleaned_patch = []
+        for line in patch_content.split('\n'):
+            if line.startswith('@@'):
+                cleaned_patch.append(line.rsplit('@@', 1)[1])
+            elif line.startswith('-'):
+                continue
+            elif line.startswith('+'):
+                cleaned_patch.append(line[1:])
+            else:
+                cleaned_patch.append(line)
+        return '\n'.join(cleaned_patch)
+
     async def get_review_context(self, filename: str, patch_content: str) -> Dict[str, Any]:
         """
         审查所需要的上下文信息
         """
-        patch_embedding = await embedding_model.async_encode_text(patch_content)
-
-        search_params = {"metric_type": "COSINE", "params": {"nprobe": 20}}
+        patch_embedding = []
+        patch_content = self.clean_patch(patch_content)
+        language = utils.get_support_file_language(filename)
+        analyzer = self.analyzers.get(language)
+        code_elements = list(analyzer.extract_functions_from_patch(patch_content))
+        if not code_elements or len(code_elements) == 0:
+            code_elements = patch_content.split("\n")
+        code_elements_count = len(code_elements)
+        limit = 20 // code_elements_count
+        if limit < 1:
+            limit = 1
+            code_elements = code_elements[:20]
+        for element in code_elements:
+            element_v = await embedding_model.async_encode_text(element)
+            patch_embedding.append(element_v.tolist())
+        search_params = {"metric_type": "IP", "params": {"nprobe": 10}}
         await self.check_elements_collection()
         results = await milvus_manager.search(
             collection_name=self.code_elements_collection,
-            data=[patch_embedding.tolist()],
+            # filter="element_name in ['" + "','".join(code_elements) + "']",
+            # filter="element_name != ''",
+            data=patch_embedding,
             anns_field="embedding",
             search_params=search_params,
-            limit=20,
+            limit=limit,
             output_fields=["file_path", "language", "element_type", "element_name", "content"]
         )
+        related_elements = []
+        for result in results:
+            if isinstance(result, dict):
+                continue
+            for code_element in result:
+                related_elements.append(code_element)
 
-        related_elements = results[0]
         # 获取相关元素的上下文信息
         context_info = self.get_context_info(related_elements)
         # 分析补丁中的依赖关系
         patch_dependencies = self.get_dependencies(filename)
+        logger.info("Dependencies: %s", patch_dependencies)
         # 项目的概述 "project_overview.md"
         project_overview = ""
         overview_path = os.path.join(self.analyze_data_path, "project_overview.md")
@@ -500,7 +540,7 @@ class CodeAnalyzer:
         if not index_detail:
             return result
         for file_name in index_detail.dependencies:
-            if len(result) > 5:
+            if len(result) > 6:
                 return result
             # 读取依赖文件的内容
             file_path = os.path.join(self.project_source_path, file_name)

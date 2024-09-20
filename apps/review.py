@@ -231,6 +231,10 @@ async def review_specific_pr(pr_url: str):
     repo_detail = github.parse_pullrequest_url(pr_url)
     pr_data = await github.get_pullrequest(repo_detail.get_repo_fullname(), repo_detail.number)
     head_sha = pr_data['head']['sha']
-    commit_message = f"{pr_data['title']}\n\n{pr_data.get('body', '')}"
+    pr_body = pr_data.get('body', '')
+    pr_title = pr_data['title']
+    if not pr_body:
+        pr_body = ""
+    commit_message = f"{pr_title}\n\n{pr_body}"
     await review_pull_request(repo_detail.get_repo_fullname(), repo_detail.number, head_sha, commit_message)
 

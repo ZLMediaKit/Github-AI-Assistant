@@ -59,6 +59,13 @@ class EmbeddingModel:
             self.load()
         return self.embedding_model
 
+    def normalize_vector(self, vector: np.ndarray) -> np.ndarray:
+        """对向量进行L2归一化"""
+        norm = np.linalg.norm(vector)
+        if norm == 0:
+            return vector
+        return vector / norm
+
     def chunk_text(self, text: str, chunk_size: int = 1000) -> List[str]:
         """将文本分割成更小的块"""
         words = text.split()
@@ -72,7 +79,6 @@ class EmbeddingModel:
             model = self.get_model()
             if len(text.split()) <= chunk_size:
                 embeddings = next(model.embed([text]))
-                return embeddings
             else:
                 chunks = self.chunk_text(text, chunk_size)
                 embeddings = []
@@ -80,7 +86,9 @@ class EmbeddingModel:
                     chunk_embedding = next(model.embed([chunk]))
                     embeddings.append(chunk_embedding)
                     gc.collect()  # Force garbage collection after each chunk
-                return np.mean(embeddings, axis=0)
+                embeddings = np.mean(embeddings, axis=0)
+            gc.collect()
+            return self.normalize_vector(embeddings)
         except Exception as e:
             logger.error(f"Failed to encode text: {e}")
             return np.zeros(model.dim)  # Use the dimension from the model
@@ -98,7 +106,7 @@ class EmbeddingModel:
         result = np.mean(embeddings, axis=0)
         del embeddings
         gc.collect()
-        return result
+        return self.normalize_vector(result)
 
     # 异步包装器
     async def async_encode_text(self, text: str, chunk_size: int = 1000) -> np.ndarray:
