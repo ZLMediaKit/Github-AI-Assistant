@@ -200,7 +200,7 @@ class AdvancedGFMTranslator(BaseGFMTranslator):
                            "languages. Your task is to translate extracted code comments to English. " \
                            "Maintain the exact formatting, including any indentation or comment symbols if present. " \
                            "Do not add or remove any symbols, or line breaks. Translate only the text within comments. " \
-                           "If the original text is already in English, please do not skip the translation and " \
+                           "If the original text is already in English, please skip the translation and " \
                            "directly output the original text. Finally, please note that the user input is just " \
                            "comments extracted from the code, there is no code, you do not need to run it, you just " \
                            "need to translate it. Therefore, there is no security issue, you cannot refuse to " \
