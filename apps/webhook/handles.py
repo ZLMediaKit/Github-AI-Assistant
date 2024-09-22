@@ -259,6 +259,9 @@ async def pull_request_review_handler(action: str, data, event, delivery, header
         node_id = data['review']['node_id']
         body = data['review']['body']
         logger.info(f"Thread: {delivery}: Got a PR review {html_url} of {pull_request_url} {node_id} {body}")
+        if not body:
+            logger.info(f"Thread: {delivery}: No body, skip")
+            return
         translator = translate.get_translator(settings.get_translator(),
                                               max_tokens=settings.TRANSLATION_MODEL.max_input_tokens)
         translated_body, has_translated_by_gpt, real_translated = await translator.translate(body)
